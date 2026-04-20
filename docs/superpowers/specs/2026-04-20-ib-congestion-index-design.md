@@ -1,35 +1,35 @@
-# IB Port-Level Congestion Index Checker
+# IB 端口级拥塞指数检查器
 
-## Overview
+## 概述
 
-Add a new InfiniBand checker that computes per-port congestion index from existing sysfs counters and alerts when congestion exceeds configured thresholds.
+新增一个 InfiniBand 检查器，基于现有 sysfs 计数器计算每端口拥塞指数，当拥塞超过配置的阈值时触发告警。
 
-**Formula**: `congestion_index = delta(port_xmit_wait) / delta(port_xmit_packets)`
+**公式**：`congestion_index = delta(port_xmit_wait) / delta(port_xmit_packets)`
 
-Where delta is the difference between two consecutive collection cycles.
+其中 delta 是两次连续采集周期之间的差值。
 
-## Data Source
+## 数据源
 
-Counters are already collected by `IBCounters.Collect()` from:
+计数器已由 `IBCounters.Collect()` 从以下路径采集：
 - `/sys/class/infiniband/{IBDev}/ports/1/counters/port_xmit_wait`
 - `/sys/class/infiniband/{IBDev}/ports/1/counters/port_xmit_packets`
 
-These values are cumulative 64-bit counters maintained by the HCA firmware. No new data collection is needed.
+这些值是 HCA 固件维护的累计 64 位计数器，无需新增数据采集。
 
-## Design Decisions
+## 设计决策
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Increment computation | Two consecutive collection cycles | Natural fit with existing QueryInterval-driven collection; no extra timers needed |
-| State storage | Checker-internal `prevCounters` | Minimal change, doesn't touch collector; consistent with other checker patterns |
-| Granularity | Per-port independent | Enables precise identification of congested ports |
-| Alert levels | Dual threshold (Warning + Critical) | Distinguishes mild from severe congestion |
-| Thresholds | Configurable in spec YAML | Allows per-cluster tuning |
-| Metrics export | Raw counters already exported; congestion_index gauge optional | Prometheus can compute rate() from raw counters; checker adds sichek-native alerting |
+| 决策项 | 选择 | 理由 |
+|--------|------|------|
+| 增量计算方式 | 两次连续采集周期的差值 | 天然适配现有 QueryInterval 驱动的采集机制，无需额外定时器 |
+| 状态存储位置 | Checker 内部 `prevCounters` | 改动最小，不动 collector；与现有 checker 模式一致 |
+| 检查粒度 | 每端口独立 | 能精确定位拥塞端口 |
+| 告警级别 | 双阈值（Warning + Critical） | 区分轻微拥塞和严重拥塞 |
+| 阈值配置 | 在 spec YAML 中可配置 | 允许按集群调优 |
+| 指标导出 | 原始计数器已导出；congestion_index gauge 可选 | Prometheus 可从原始计数器用 rate() 自行计算；checker 提供 sichek 原生告警 |
 
-## Checker Implementation
+## Checker 实现
 
-### New File: `components/infiniband/checker/ib_congestion.go`
+### 新文件：`components/infiniband/checker/ib_congestion.go`
 
 ```go
 type IBCongestionChecker struct {
@@ -39,44 +39,44 @@ type IBCongestionChecker struct {
 }
 ```
 
-**Check() logic**:
+**Check() 逻辑**：
 
-1. If `prevCounters` is empty (first invocation): save current counters, return StatusNormal.
-2. For each IB device in `infinibandInfo.IBCounters`:
-   a. Read `port_xmit_wait` and `port_xmit_packets` (current values).
-   b. Compute deltas against `prevCounters[ibDev]`.
-   c. If `deltaPkt == 0`: skip (no traffic).
-   d. Compute `congestionIndex = float64(deltaWait) / float64(deltaPkt)`.
-3. Update `prevCounters` with current snapshot.
-4. Determine result from the worst (highest) congestion index across all ports:
-   - `> CriticalThreshold` (default 0.2): StatusAbnormal, LevelCritical
-   - `> WarningThreshold` (default 0.05): StatusAbnormal, LevelWarning
-   - Otherwise: StatusNormal
-5. Detail includes: port name, congestion index value, deltaWait, deltaPkt.
+1. 若 `prevCounters` 为空（首次调用）：保存当前计数器快照，返回 StatusNormal。
+2. 遍历 `infinibandInfo.IBCounters` 中的每个 IB 设备：
+   a. 读取 `port_xmit_wait` 和 `port_xmit_packets`（当前值）。
+   b. 与 `prevCounters[ibDev]` 计算增量。
+   c. 若 `deltaPkt == 0`：跳过（无流量）。
+   d. 计算 `congestionIndex = float64(deltaWait) / float64(deltaPkt)`。
+3. 用当前快照更新 `prevCounters`。
+4. 取所有端口中最差（最高）的拥塞指数判定结果：
+   - `> CriticalThreshold`（默认 0.2）：StatusAbnormal，LevelCritical
+   - `> WarningThreshold`（默认 0.05）：StatusAbnormal，LevelWarning
+   - 否则：StatusNormal
+5. Detail 包含：端口名、拥塞指数值、deltaWait、deltaPkt。
 
-**Counter overflow handling**: If `cur < prev` (64-bit counter wrap), treat delta as 0 and skip that port for this cycle.
+**计数器溢出处理**：若 `cur < prev`（64 位计数器回绕），将 delta 视为 0 并跳过该端口本周期的检查。
 
-## Config Changes
+## 配置变更
 
 ### check_items.go
 
-New constant and CheckerResult entry:
+新增常量和 CheckerResult 条目：
 
 ```go
 const CheckIBCongestion = "check_ib_congestion"
 
 CheckIBCongestion: {
     Name:        "check_ib_congestion",
-    Description: "Check IB port congestion index (XmitWait/XmitPkt)",
+    Description: "检查 IB 端口拥塞指数（XmitWait/XmitPkt）",
     Level:       consts.LevelWarning,
     ErrorName:   "IBCongestion",
-    Suggestion:  "Check network traffic patterns and switch configuration",
+    Suggestion:  "检查网络流量模式和交换机配置",
 }
 ```
 
-### Spec Extension
+### Spec 扩展
 
-Add threshold fields to `InfinibandSpec`:
+在 `InfinibandSpec` 中新增阈值字段：
 
 ```go
 CongestionWarningThreshold  float64 `json:"congestion_warning_threshold" yaml:"congestion_warning_threshold"`
@@ -92,40 +92,40 @@ infiniband:
     congestion_critical_threshold: 0.2
 ```
 
-## Registration
+## 注册
 
-In `checker/checker.go`, add to `checkerConstructors`:
+在 `checker/checker.go` 的 `checkerConstructors` 中添加：
 
 ```go
 config.CheckIBCongestion: NewIBCongestionChecker,
 ```
 
-## Metrics (Optional)
+## 指标导出（可选）
 
-Raw counters (`port_xmit_wait`, `port_xmit_packets`) are already exported as:
+原始计数器（`port_xmit_wait`、`port_xmit_packets`）已作为以下 Prometheus 指标导出：
 ```
 sichek_infiniband_counter{ib_dev="mlx5_0", counter_name="port_xmit_wait"}
 sichek_infiniband_counter{ib_dev="mlx5_0", counter_name="port_xmit_packets"}
 ```
 
-Prometheus/Grafana can compute `rate(port_xmit_wait) / rate(port_xmit_packets)` directly.
+Prometheus/Grafana 可直接计算 `rate(port_xmit_wait) / rate(port_xmit_packets)`。
 
-Optionally, a `sichek_infiniband_congestion_index{ib_dev="mlx5_0"}` gauge can be added in a follow-up.
+后续可选新增 `sichek_infiniband_congestion_index{ib_dev="mlx5_0"}` gauge。
 
-## File Change Summary
+## 文件变更清单
 
-| File | Change |
-|------|--------|
-| `components/infiniband/checker/ib_congestion.go` | **New** - checker implementation |
-| `components/infiniband/checker/ib_congestion_test.go` | **New** - unit tests |
-| `components/infiniband/config/check_items.go` | Add constant + CheckerResult |
-| `components/infiniband/config/spec.go` | Add threshold fields to InfinibandSpec |
-| `config/default_spec.yaml` | Add default thresholds |
-| `components/infiniband/checker/checker.go` | Register new checker |
-| `consts/consts.go` | Add CheckerID constant |
+| 文件 | 变更 |
+|------|------|
+| `components/infiniband/checker/ib_congestion.go` | **新增** — checker 实现 |
+| `components/infiniband/checker/ib_congestion_test.go` | **新增** — 单元测试 |
+| `components/infiniband/config/check_items.go` | 新增常量 + CheckerResult |
+| `components/infiniband/config/spec.go` | InfinibandSpec 新增阈值字段 |
+| `config/default_spec.yaml` | 新增默认阈值 |
+| `components/infiniband/checker/checker.go` | 注册新 checker |
+| `consts/consts.go` | 新增 CheckerID 常量 |
 
-## Out of Scope
+## 不在本次范围内
 
-- Full-fabric congestion map (requires ibdiagnet2 from management node)
-- Node-level aggregated congestion index
-- Congestion index export as dedicated Prometheus gauge (follow-up)
+- 全网拥塞热力图（需要从管理节点运行 ibdiagnet2）
+- 节点级聚合拥塞指数
+- 拥塞指数作为独立 Prometheus gauge 导出（后续迭代）

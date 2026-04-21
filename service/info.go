@@ -27,16 +27,17 @@ import (
 )
 
 type nodeAnnotation struct {
-	Podlog     map[string][]*annotation `json:"podlog"`
-	Syslog     map[string][]*annotation `json:"syslog"`
-	Hang       map[string][]*annotation `json:"hang"`
-	NVIDIA     map[string][]*annotation `json:"nvidia"`
-	Infiniband map[string][]*annotation `json:"infiniband"`
-	Ethernet   map[string][]*annotation `json:"ethernet"`
-	GPFS       map[string][]*annotation `json:"gpfs"`
-	CPU        map[string][]*annotation `json:"cpu"`
-	Memory     map[string][]*annotation `json:"memory"`
-	Dmesg      map[string][]*annotation `json:"dmesg"`
+	Podlog      map[string][]*annotation `json:"podlog"`
+	Syslog      map[string][]*annotation `json:"syslog"`
+	Hang        map[string][]*annotation `json:"hang"`
+	NVIDIA      map[string][]*annotation `json:"nvidia"`
+	Infiniband  map[string][]*annotation `json:"infiniband"`
+	Ethernet    map[string][]*annotation `json:"ethernet"`
+	GPFS        map[string][]*annotation `json:"gpfs"`
+	CPU         map[string][]*annotation `json:"cpu"`
+	Memory      map[string][]*annotation `json:"memory"`
+	Dmesg       map[string][]*annotation `json:"dmesg"`
+	Transceiver map[string][]*annotation `json:"transceiver"`
 }
 
 func GetAnnotationFromJson(jsonStr string) (*nodeAnnotation, error) {
@@ -79,6 +80,8 @@ func (a *nodeAnnotation) getAnnotationsByItem(item string) (map[string][]*annota
 		return a.Syslog, nil
 	case consts.ComponentNameNvidia:
 		return a.NVIDIA, nil
+	case consts.ComponentNameTransceiver:
+		return a.Transceiver, nil
 	}
 	return nil, fmt.Errorf("input item %s is not supported", item)
 }
@@ -106,6 +109,8 @@ func (a *nodeAnnotation) setAnnotationsByItem(item string, annotations map[strin
 		a.Syslog = annotations
 	case consts.ComponentNameNvidia:
 		a.NVIDIA = annotations
+	case consts.ComponentNameTransceiver:
+		a.Transceiver = annotations
 	}
 	return nil
 }

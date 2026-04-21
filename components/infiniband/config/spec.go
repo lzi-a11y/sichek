@@ -92,6 +92,9 @@ func FilterSpec(specs *InfinibandSpecs, file string) (*InfinibandSpec, error) {
 		for k := range devBoardIDMap {
 			currKeys = append(currKeys, k)
 		}
+		// Save the original count before trimming; IBLostChecker compares
+		// runtime device count against this baseline to detect missing cards.
+		ibSpec.HCANum = len(ibSpec.IBPFDevs)
 		changed := TrimMapByList(devBoardIDMap, ibSpec.IBPFDevs)
 		if changed {
 			logrus.WithField("component", "infiniband").

@@ -85,21 +85,6 @@ func (c *IBDevsChecker) Check(ctx context.Context, data any) (*common.CheckerRes
 			mismatchDetails = append(mismatchDetails, fmt.Sprintf("%s -> %s (expected %s)", expectedMlx5, actualIb, expectedIb))
 		}
 	}
-	// 2) Actual -> spec: extra devices not defined in spec (e.g. mlx5_7 in spec but actual shows mlx5_13_6209)
-	for actualMlx5 := range infinibandInfo.IBPFDevs {
-		if strings.Contains(actualMlx5, "mezz") {
-			continue
-		}
-		if utils.IsLowSpeedIBBond(actualMlx5) {
-			logrus.WithField("component", "infiniband").Debugf("skip management bond %s in check", actualMlx5)
-			continue
-		}
-		if _, inSpec := c.spec.IBPFDevs[actualMlx5]; !inSpec {
-			failedDevices = append(failedDevices, actualMlx5)
-			mismatchDetails = append(mismatchDetails, fmt.Sprintf("%s (not in spec)", actualMlx5))
-			logrus.WithField("component", "infiniband").Debugf("mismatch: actual device %s not defined in spec", actualMlx5)
-		}
-	}
 	infinibandInfo.RUnlock()
 
 	if len(failedDevices) > 0 {

@@ -110,9 +110,21 @@ func FilterSpec(specs *InfinibandSpecs, file string) (*InfinibandSpec, error) {
 
 		ibSpec.HCAs = make(map[string]*hcaConfig.HCASpec)
 
+		// Build the set of board IDs for spec-defined devices only.
+		// Checkers use HCAs to filter which devices to check; including
+		// board IDs for devices not in IBPFDevs would cause checkers to
+		// evaluate hardware that the spec intentionally excludes.
+		specBoardIDs := make(map[string]struct{})
+		for devName := range ibSpec.IBPFDevs {
+			if boardID, ok := devBoardIDMap[devName]; ok {
+				specBoardIDs[boardID] = struct{}{}
+			}
+		}
+		_ = ibDevs
+
 		// Check each board ID and fill in missing specs from hcaSpecs
 		var missingBoardIDs []string
-		for _, boardID := range ibDevs {
+		for boardID := range specBoardIDs {
 			if hcaSpec, ok := hcaSpecs.Specs[boardID]; ok {
 				ibSpec.HCAs[boardID] = hcaSpec
 				logrus.WithField("component", "infiniband").

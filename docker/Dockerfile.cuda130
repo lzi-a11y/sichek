@@ -35,12 +35,12 @@ RUN if [ -n "$BUILD_TIME" ]; then \
       INCLUDE_SICL=$INCLUDE_SICL \
       SICL_PKG_VERSION=$SICL_PKG_VERSION \
       SICL_PKG_NAME=$SICL_PKG_NAME \
-      goreleaser release --snapshot --clean ; \
+      goreleaser release --snapshot --clean --single-target ; \
     else \
       INCLUDE_SICL=$INCLUDE_SICL \
       SICL_PKG_VERSION=$SICL_PKG_VERSION \
       SICL_PKG_NAME=$SICL_PKG_NAME \
-      goreleaser release --snapshot --clean ; \
+      goreleaser release --snapshot --clean --single-target ; \
     fi
 
 FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04

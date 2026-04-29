@@ -1,5 +1,5 @@
-ARG CUDA_VERSION=12.8.1
-FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu20.04 AS build
+ARG CUDA_VERSION=12.9.1
+FROM --platform=linux/arm64 nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04 AS build
 
 ARG GO_VERSION=1.23.3
 ARG GORELEASER_VERSION=v2.13.1
@@ -10,13 +10,13 @@ RUN mv /etc/apt/sources.list.d/cuda*.list /tmp/disabled-cuda.list 2>/dev/null ||
         build-essential gcc g++ curl git wget ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Go
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | \
+# Install Go (arm64)
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz | \
     tar -C /usr/local -xz && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go
 
-# Install GoReleaser
-RUN curl -fsSL https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_x86_64.tar.gz | \
+# Install GoReleaser (arm64)
+RUN curl -fsSL https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_arm64.tar.gz | \
     tar -xz -C /usr/local/bin goreleaser && \
     goreleaser --version
 
@@ -43,7 +43,7 @@ RUN if [ -n "$BUILD_TIME" ]; then \
       goreleaser release --snapshot --clean --single-target ; \
     fi
 
-FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu20.04
+FROM --platform=linux/arm64 nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
@@ -66,11 +66,10 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
 WORKDIR /opt/sichek
 COPY --from=build /go/src/sichek/dist ./dist
 
-ARG SICL_VERSION=sicl-25.11-1.cuda128.ubuntu2004.run
-RUN curl -fsSL -o ./dist/${SICL_VERSION} \
-      https://oss-ap-southeast.scitix.ai/scitix-release/${SICL_VERSION} && \
-    bash ./dist/${SICL_VERSION} && \
-    dpkg -i ./dist/sichek_*_linux_amd64.deb
+ARG SICL_PKG_VERSION=v0.2.1
+ARG SICL_PKG_NAME=sicl-nccl2.29.2-1-cuda12.9-ompi4.1.8-ubuntu22.04-20260128.run
+
+RUN dpkg -i ./dist/sichek_*_linux_arm64.deb
 
 ENV SIHPC_HOME=/usr/local/sihpc
 ENV PATH=${SIHPC_HOME}/bin:$PATH

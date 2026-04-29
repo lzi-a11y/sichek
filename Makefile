@@ -81,6 +81,15 @@ pkg-cuda130:
 	docker cp sichek-tmp-cuda130-${VERSION}:/go/src/sichek/dist/. ./dist-cuda130/
 	docker rm sichek-tmp-cuda130-${VERSION}
 
+pkg-arm64:
+	mkdir -p ./dist-arm64
+	docker build --target build --platform linux/arm64 \
+	--build-arg BUILD_TIME=${BUILD_TIME} \
+	-t sichek-arm64-build:${VERSION} -f docker/Dockerfile.arm64 .
+	docker create --platform linux/arm64 --name sichek-tmp-arm64-${VERSION} sichek-arm64-build:${VERSION}
+	docker cp sichek-tmp-arm64-${VERSION}:/go/src/sichek/dist/. ./dist-arm64/
+	docker rm sichek-tmp-arm64-${VERSION}
+
 pkg-cuda128:
 	mkdir -p ./dist-cuda128
 	docker build --target build \

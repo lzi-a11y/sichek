@@ -39,11 +39,11 @@ var (
 
 func GetSichekSpecURL() string {
 	specURLOnce.Do(func() {
-		// 1. 尝试从环境变量获取
-		if envURL := os.Getenv("SICHEK_SPEC_URL"); envURL != "" {
-			specURL = envURL
-			return
-		}
+		// // 1. 尝试从环境变量获取
+		// if envURL := os.Getenv("SICHEK_SPEC_URL"); envURL != "" {
+		// 	specURL = envURL
+		// 	return
+		// }
 
 		// 2. 尝试从本地配置文件获取
 		configPath := filepath.Join(consts.DefaultProductionCfgPath, consts.DefaultUserCfgName)

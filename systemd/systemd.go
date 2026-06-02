@@ -20,6 +20,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ var SichekService string
 var SichekLogrotate string
 
 const (
-	DefaultEnvFile       = "/etc/default/sichek"
+	DefaultEnvFile       = "/var/sichek/run/env"
 	DefaultUnitFile      = "/etc/systemd/system/sichek.service"
 	DefaultLogrotateConf = "/etc/logrotate.d/sichek"
 	DefaultBinPath       = "/usr/local/bin/sichek"
@@ -46,6 +47,12 @@ func CreateDefaultEnvFile() error {
 		return nil
 	}
 
+	// The systemd unit reads this file via `EnvironmentFile=-/var/sichek/run/env`,
+	// whose parent dir may not exist yet on a fresh host.
+	if err := os.MkdirAll(filepath.Dir(DefaultEnvFile), 0755); err != nil {
+		return err
+	}
+
 	f, err := os.OpenFile(DefaultEnvFile, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
@@ -57,9 +64,18 @@ func CreateDefaultEnvFile() error {
 		}
 	}(f)
 
-	_, err = f.WriteString(`# sichek environment variables are set here
-FLAGS=""
-`)
+	var b strings.Builder
+	b.WriteString("# sichek environment variables are set here\n")
+	b.WriteString("FLAGS=\"\"\n")
+	// Propagate offline / spec-url settings from the install-time environment so
+	// the systemd daemon (which runs with a clean env) inherits them.
+	if v := os.Getenv("SICHEK_OFFLINE"); v != "" {
+		fmt.Fprintf(&b, "SICHEK_OFFLINE=%s\n", v)
+	}
+	if v := os.Getenv("SICHEK_SPEC_URL"); v != "" {
+		fmt.Fprintf(&b, "SICHEK_SPEC_URL=%s\n", v)
+	}
+	_, err = f.WriteString(b.String())
 	return err
 }
 

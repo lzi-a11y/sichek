@@ -41,6 +41,15 @@ func GetSichekSpecURL() string {
 	specURLOnce.Do(func() {
 		configPath := filepath.Join(consts.DefaultProductionCfgPath, consts.DefaultUserCfgName)
 
+		// 0. 内网/离线开关:设置 SICHEK_OFFLINE 时跳过公网探测,纯走本地预置 spec。
+		//    返回空字符串,让调用方(EnsureSpec/EnsureSpecFile)回退到本地已有文件,
+		//    既不探测公网也不发起下载。未设置该变量时,以下逻辑保持原样不变。
+		if off := os.Getenv("SICHEK_OFFLINE"); off == "1" || strings.EqualFold(off, "true") {
+			logrus.Info("SICHEK_OFFLINE is set, skip OSS spec URL probe; using local specs only")
+			specURL = ""
+			return
+		}
+
 		// 1. 自动探测:取当前可达的地址(最高优先,避免用到过期的持久化值)
 		if probed := probeSpecURL(); probed != "" {
 			specURL = probed

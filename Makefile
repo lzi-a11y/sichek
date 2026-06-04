@@ -10,6 +10,7 @@ VERSION := dev-${BUILD_TIME}-${GIT_COMMIT}
 TASKGUARD_VERISON := v0.1.0
 SICL_PKG_VERSION := v0.2.1
 SICL_PKG_NAME := sicl-nccl2.29.2-1-cuda12.9-ompi4.1.8-ubuntu22.04-20260128.run
+INCLUDE_SICL := false
 
 all:
 	mkdir -p build/bin/
@@ -67,6 +68,9 @@ pkg:
 	mkdir -p ./dist
 	docker build --target build \
 	--build-arg BUILD_TIME=${BUILD_TIME} \
+	--build-arg INCLUDE_SICL=${INCLUDE_SICL} \
+	--build-arg SICL_PKG_VERSION=${SICL_PKG_VERSION} \
+	--build-arg SICL_PKG_NAME=${SICL_PKG_NAME} \
 	-t sichek-build:${VERSION} -f docker/Dockerfile .
 	docker create --name sichek-tmp-${VERSION} sichek-build:${VERSION}
 	docker cp sichek-tmp-${VERSION}:/go/src/sichek/dist/. ./dist/
@@ -76,6 +80,9 @@ pkg-cuda130:
 	mkdir -p ./dist-cuda130
 	docker build --target build \
 	--build-arg BUILD_TIME=${BUILD_TIME} \
+	--build-arg INCLUDE_SICL=${INCLUDE_SICL} \
+	--build-arg SICL_PKG_VERSION=${SICL_PKG_VERSION} \
+	--build-arg SICL_PKG_NAME=${SICL_PKG_NAME} \
 	-t sichek-cuda130-build:${VERSION} -f docker/Dockerfile.cuda130 .
 	docker create --name sichek-tmp-cuda130-${VERSION} sichek-cuda130-build:${VERSION}
 	docker cp sichek-tmp-cuda130-${VERSION}:/go/src/sichek/dist/. ./dist-cuda130/
@@ -85,6 +92,9 @@ pkg-cuda128:
 	mkdir -p ./dist-cuda128
 	docker build --target build \
 	--build-arg BUILD_TIME=${BUILD_TIME} \
+	--build-arg INCLUDE_SICL=${INCLUDE_SICL} \
+	--build-arg SICL_PKG_VERSION=${SICL_PKG_VERSION} \
+	--build-arg SICL_PKG_NAME=${SICL_PKG_NAME} \
 	-t sichek-cuda128-build:${VERSION} -f docker/Dockerfile.cuda128 .
 	docker create --name sichek-tmp-cuda128-${VERSION} sichek-cuda128-build:${VERSION}
 	docker cp sichek-tmp-cuda128-${VERSION}:/go/src/sichek/dist/. ./dist-cuda128/

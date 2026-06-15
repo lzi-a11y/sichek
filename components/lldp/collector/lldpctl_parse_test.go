@@ -92,6 +92,47 @@ func TestParseLldpctlJSON_Bjg45VlanWithValue(t *testing.T) {
 	assert.Equal(t, "139", ens.Port.AggregationID)
 }
 
+func TestParseLldpctlJSON_Zy1RailFabric(t *testing.T) {
+	got, err := ParseLldpctlJSON(loadFixture(t, "zy1.json"))
+	require.NoError(t, err)
+	require.Len(t, got, 52, "zy1 has 8 rails x4 ports + storage + mgmt + VF-rep loopbacks")
+
+	// Compute rail uplink: real switch port advertised as ifname.
+	p0, ok := got["eth_r0_p0"]
+	require.True(t, ok)
+	assert.Equal(t, "KL-R0LF01", p0.Chassis.Name)
+	assert.Equal(t, "ifname", p0.Port.IDType)
+	assert.Equal(t, "TwoHundredGigE1/0/1:1", p0.Port.ID)
+
+	// Storage leaf uplink.
+	assert.Equal(t, "KL-SLF01", got["s_eth0"].Chassis.Name)
+
+	// OVS VF representor: chassis is this host itself (a self loopback, not a
+	// switch uplink). The display layer filters these out by hostname.
+	vf, ok := got["eth_vf_rep_r0"]
+	require.True(t, ok)
+	assert.Equal(t, "hydra-gpu-214-171-47-1", vf.Chassis.Name)
+}
+
+func TestParseLldpctlJSON_Lmg86HostNeighbor(t *testing.T) {
+	got, err := ParseLldpctlJSON(loadFixture(t, "lmg86.json"))
+	require.NoError(t, err)
+	require.Len(t, got, 6)
+
+	// eth0 neighbor is another host, not a switch: it identifies its port by
+	// MAC (id_type "mac") rather than an ifname. The display layer uses this
+	// to exclude host-to-host links from the switch-uplink table.
+	eth0, ok := got["eth0"]
+	require.True(t, ok)
+	assert.Equal(t, "mac", eth0.Port.IDType)
+
+	// eth1 is a real switch uplink (ifname port on a Lambda leaf).
+	eth1, ok := got["eth1"]
+	require.True(t, ok)
+	assert.Equal(t, "ifname", eth1.Port.IDType)
+	assert.Equal(t, "ethernet12a", eth1.Port.ID)
+}
+
 func TestParseLldpctlJSON_Empty(t *testing.T) {
 	got, err := ParseLldpctlJSON(loadFixture(t, "empty.json"))
 	require.NoError(t, err)

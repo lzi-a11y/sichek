@@ -273,13 +273,7 @@ func (c *component) PrintInfo(info common.Info, result *common.Result, summaryPr
 // isSwitchUplink reports whether an LLDP neighbor is a real switch uplink
 // (as opposed to a self VF-representor loopback or a host-to-host link).
 func isSwitchUplink(iface collector.IfaceInfo, hostname string) bool {
-	if iface.Neighbor.Port.IDType != "ifname" {
-		return false
-	}
-	if hostname != "" && iface.Neighbor.Chassis.Name == hostname {
-		return false
-	}
-	return true
+	return collector.IsSwitchNeighbor(iface.Neighbor, hostname)
 }
 
 func dashes(n int) string { return strings.Repeat("-", n) }

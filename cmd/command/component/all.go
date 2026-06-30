@@ -32,6 +32,7 @@ import (
 	"github.com/scitix/sichek/components/infiniband"
 	"github.com/scitix/sichek/components/lldp"
 	"github.com/scitix/sichek/components/nvidia"
+	"github.com/scitix/sichek/components/ovs"
 	"github.com/scitix/sichek/components/pcie/topotest"
 	"github.com/scitix/sichek/components/podlog"
 	"github.com/scitix/sichek/components/syslog"
@@ -193,6 +194,8 @@ func NewComponent(componentName string, cfgFile string, specFile string, ignored
 		return ethernet.NewEthernetComponent(cfgFile, specFile, ignoredCheckers)
 	case consts.ComponentNameTransceiver:
 		return transceiver.NewComponent(cfgFile, specFile, ignoredCheckers)
+	case consts.ComponentNameOVS:
+		return ovs.NewComponent(cfgFile, specFile, ignoredCheckers)
 	case consts.ComponentNameLLDP:
 		return lldp.NewComponent(cfgFile, specFile)
 	default:

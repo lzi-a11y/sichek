@@ -47,6 +47,8 @@ const (
 	ComponentNameTransceiver  = "transceiver"
 	ComponentIDLLDP           = "17"
 	ComponentNameLLDP         = "lldp"
+	ComponentIDOVS            = "18"
+	ComponentNameOVS          = "ovs"
 
 	/*----------------------checker id------------------------*/
 	CheckerIDInfinibandFW            = "4001"
@@ -98,6 +100,7 @@ var (
 	DefaultComponents = []string{
 		ComponentNameCPU, ComponentNameNvidia, ComponentNameInfiniband, ComponentNameEthernet, ComponentNameGpfs, ComponentNameDmesg,
 		ComponentNamePodlog, ComponentNameGpuEvents, ComponentNameSyslog, ComponentNameTransceiver, ComponentNameLLDP,
+		ComponentNameOVS,
 	}
 )
 

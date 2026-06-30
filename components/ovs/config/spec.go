@@ -36,14 +36,24 @@ type OVSSpec struct {
 	CoverageEvents   []string          `json:"coverage_events" yaml:"coverage_events"`
 }
 
-// LoadSpec loads the OVS spec from file; on any failure it returns the built-in default.
+// valid reports whether a loaded spec has our required flat-schema fields
+// populated. A legacy/stale `ovs:` section with a different nested schema
+// unmarshals into a zero-valued OVSSpec (NumRails==0, etc.) and must be
+// rejected so we fall back to the built-in default rather than checking
+// nothing. The nil receiver check makes valid() safe to call on a nil *OVSSpec.
+func (s *OVSSpec) valid() bool {
+	return s != nil && s.NumRails > 0 && s.BridgePrefix != "" && len(s.ExpectedGroupIDs) > 0
+}
+
+// LoadSpec loads the OVS spec from file; on any failure, or when the loaded
+// spec is empty/legacy-shaped, it returns the built-in default.
 func LoadSpec(file string) (*OVSSpec, error) {
 	if file == "" {
 		return DefaultSpec(), nil
 	}
 	var s OVSSpecConfig
-	if err := common.LoadSpec(file, &s); err != nil || s.OVS == nil {
-		logrus.WithField("component", "ovs/spec").Warnf("LoadSpec %s failed or empty, using built-in default: %v", file, err)
+	if err := common.LoadSpec(file, &s); err != nil || !s.OVS.valid() {
+		logrus.WithField("component", "ovs/spec").Warnf("ovs spec in %s missing/invalid (err=%v), using built-in default", file, err)
 		return DefaultSpec(), nil
 	}
 	return s.OVS, nil

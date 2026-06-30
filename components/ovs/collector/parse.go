@@ -182,17 +182,35 @@ func parsePMDPerf(out string) []PMDInfo {
 // grabField returns the token following "<key>" (skipping leading spaces/colons)
 // up to the next whitespace or ','.
 func grabField(s, key string) string {
-	idx := strings.Index(s, key)
-	if idx < 0 {
+	_, rest, found := strings.Cut(s, key)
+	if !found {
 		return ""
 	}
-	rest := strings.TrimLeft(s[idx+len(key):], " :")
+	rest = strings.TrimLeft(rest, " :")
 	for i := 0; i < len(rest); i++ {
 		if rest[i] == ' ' || rest[i] == ',' || rest[i] == ':' {
 			return rest[:i]
 		}
 	}
 	return rest
+}
+
+// parseOVSStatMap extracts a uint64 value for key from an OVS map string such as
+// `{rx_bytes=5598796, tx_bytes=12, rx_errors=0}`. Returns 0 if the key is absent.
+func parseOVSStatMap(s, key string) uint64 {
+	_, rest, found := strings.Cut(s, key+"=")
+	if !found {
+		return 0
+	}
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	v, _ := strconv.ParseUint(rest[:end], 10, 64)
+	return v
 }
 
 // grabFirstUint returns the first run of digits found in s as a uint64.
@@ -217,11 +235,11 @@ func grabFirstUint(s string) uint64 {
 
 // grabUint finds "<key><digits>" in s and returns the digits as uint64.
 func grabUint(s, key string) uint64 {
-	idx := strings.Index(s, key)
-	if idx < 0 {
+	_, rest, found := strings.Cut(s, key)
+	if !found {
 		return 0
 	}
-	rest := strings.TrimLeft(s[idx+len(key):], " ")
+	rest = strings.TrimLeft(rest, " ")
 	end := 0
 	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
 		end++

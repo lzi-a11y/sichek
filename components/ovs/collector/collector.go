@@ -93,10 +93,11 @@ func (c *OVSCollector) Collect(ctx context.Context) (common.Info, error) {
 		info.OtherConfig[k] = ovsGet(ctx, "--if-exists", "get", "Open_vSwitch", ".", "other_config:"+k)
 	}
 
-	// Bridges
+	// Bridges. list-br is fetched once and shared across all rails.
+	lsOut := run(ctx, "ovs-vsctl", "list-br")
 	for r := 0; r < c.spec.NumRails; r++ {
 		br := fmt.Sprintf("%s%d", c.spec.BridgePrefix, r)
-		info.Bridges = append(info.Bridges, c.collectBridge(ctx, br))
+		info.Bridges = append(info.Bridges, c.collectBridge(ctx, br, lsOut))
 	}
 
 	// Datapath / PMD / coverage (info + metrics only)
@@ -107,10 +108,13 @@ func (c *OVSCollector) Collect(ctx context.Context) (common.Info, error) {
 	return info, nil
 }
 
-func (c *OVSCollector) collectBridge(ctx context.Context, br string) BridgeInfo {
+// collectBridge gathers per-bridge state. lsOut is the shared `ovs-vsctl list-br`
+// output captured once by Collect; existence is checked against it rather than
+// re-running list-br per bridge.
+func (c *OVSCollector) collectBridge(ctx context.Context, br, lsOut string) BridgeInfo {
 	b := BridgeInfo{Name: br}
-	// Detect bridge membership via list-br (br-exists has no stdout).
-	for _, x := range strings.Split(run(ctx, "ovs-vsctl", "list-br"), "\n") {
+	// Detect bridge membership via the shared list-br output (br-exists has no stdout).
+	for _, x := range strings.Split(lsOut, "\n") {
 		if strings.TrimSpace(x) == br {
 			b.Exists = true
 			break
@@ -123,10 +127,13 @@ func (c *OVSCollector) collectBridge(ctx context.Context, br string) BridgeInfo 
 	b.FailMode = ovsGet(ctx, "get", "bridge", br, "fail_mode")
 	ports := strings.Fields(run(ctx, "ovs-vsctl", "list-ports", br))
 	b.Ports = len(ports)
-	b.Flows = parseFlowCount(run(ctx, "ovs-ofctl", "dump-flows", br))
+	// dump-flows is run once and reused for both the flow count and the port refs
+	// (avoids a duplicate exec + data-consistency skew on a live switch).
+	flowsOut := run(ctx, "ovs-ofctl", "dump-flows", br)
+	b.Flows = parseFlowCount(flowsOut)
 	b.GroupIDs = parseGroupIDs(run(ctx, "ovs-ofctl", "dump-groups", br))
 	ofPorts := parseOFShowPorts(run(ctx, "ovs-ofctl", "show", br))
-	refs := parseFlowPortRefs(run(ctx, "ovs-ofctl", "dump-flows", br))
+	refs := parseFlowPortRefs(flowsOut)
 	b.OrphanFlowRefs, b.OrphanPorts = diffPorts(ofPorts, refs)
 	for _, p := range ports {
 		pi := PortInfo{Name: p}
@@ -136,6 +143,11 @@ func (c *OVSCollector) collectBridge(ctx context.Context, br string) BridgeInfo 
 		if e := ovsGet(ctx, "get", "interface", p, "error"); e != "[]" {
 			pi.Error = e
 		}
+		// Single statistics map call per port (mirrors rdma-doctor port_bytes/port_packets).
+		stats := ovsGet(ctx, "get", "interface", p, "statistics")
+		pi.RxBytes = parseOVSStatMap(stats, "rx_bytes")
+		pi.TxBytes = parseOVSStatMap(stats, "tx_bytes")
+		pi.RxErrPkts = parseOVSStatMap(stats, "rx_errors")
 		b.PortDetails = append(b.PortDetails, pi)
 	}
 	return b

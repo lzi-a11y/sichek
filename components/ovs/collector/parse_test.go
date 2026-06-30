@@ -72,6 +72,28 @@ func TestParseCoverage(t *testing.T) {
 	assert.Equal(t, uint64(1), cov["flow_offload_200ms_latency"])
 }
 
+func TestParseOVSStatMap(t *testing.T) {
+	const stats = "{rx_bytes=5598796, tx_bytes=12, rx_errors=0}"
+	tests := []struct {
+		name string
+		in   string
+		key  string
+		want uint64
+	}{
+		{"rx_bytes", stats, "rx_bytes", 5598796},
+		{"tx_bytes", stats, "tx_bytes", 12},
+		{"rx_errors zero", stats, "rx_errors", 0},
+		{"missing key", stats, "tx_errors", 0},
+		{"empty input", "", "rx_bytes", 0},
+		{"no braces", "rx_bytes=42", "rx_bytes", 42},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseOVSStatMap(tt.in, tt.key))
+		})
+	}
+}
+
 func TestParsePMDPerf(t *testing.T) {
 	out := readFixture(t, "pmd-perf-show.txt")
 	pmds := parsePMDPerf(out)

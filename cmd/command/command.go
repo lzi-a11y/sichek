@@ -43,6 +43,7 @@ func NewRootCmd() *cobra.Command {
 				"run":        true,
 				"ethernet":   true,
 				"e":          true,
+				"ovs":        true,
 			}
 
 			if commandsRequireRoot[cmd.Use] {

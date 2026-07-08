@@ -61,6 +61,7 @@ type InfinibandInfo struct {
 	IBCapablePCINum int                       `json:"ib_capable_pci_num" yaml:"ib_capable_pci_num"`
 	IBPFDevs        map[string]string         `json:"ib_dev" yaml:"ib_dev"`
 	IBPCIDevs       map[string]string         `json:"hca_pci_dev" yaml:"hca_pci_dev"`
+	IBLostPCIDevs   map[string]string         `json:"ib_lost_pci_dev,omitempty" yaml:"ib_lost_pci_dev,omitempty"`
 	IBHardWareInfo  map[string]IBHardWareInfo `json:"ib_hardware_info" yaml:"ib_hardware_info"`
 	IBSoftWareInfo  IBSoftWareInfo            `json:"ib_software_info" yaml:"ib_software_info"`
 	// PCIETreeInfo   map[string]PCIETreeInfo   `json:"pcie_tree_info" yaml:"pcie_tree_info"`
@@ -90,6 +91,11 @@ func NewIBCollector(ctx context.Context) (*InfinibandInfo, error) {
 	i.IBCapablePCINum = len(i.IBPCIDevs)
 	if err != nil {
 		logrus.WithField("component", "infiniband").Warnf("Failed to find PCI devices: %v", err)
+	}
+
+	i.IBLostPCIDevs, err = GetLostIBPCIeDevices()
+	if err != nil {
+		logrus.WithField("component", "infiniband").Warnf("Failed to scan for lost IB PCIe devices: %v", err)
 	}
 
 	return i, nil
@@ -155,6 +161,7 @@ func (i *InfinibandInfo) Collect(ctx context.Context) (common.Info, error) {
 		// Copy initialization-time values from the original object
 		IBNicRole:       i.IBNicRole,
 		IBPCIDevs:       i.IBPCIDevs,
+		IBLostPCIDevs:   i.IBLostPCIDevs,
 		IBCapablePCINum: i.IBCapablePCINum,
 		portResolver:    i.portResolver,
 	}

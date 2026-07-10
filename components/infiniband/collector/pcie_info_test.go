@@ -316,3 +316,40 @@ func TestGetLostIBPCIeDevices(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]string{"0000:65:01.0": "0x15b3:0x1021"}, lost)
 }
+
+// TestScanPCIeState_RescansFromDisk reproduces the reboot false-positive:
+// the collector must (re)derive its PCIe device sets from the current bus
+// state every time it scans, not freeze them at construction. On reboot the
+// mlx5 stack binds HCAs asynchronously, so a function can look "lost" (driver
+// bound, but infiniband/ and net/ not yet created) at the instant the collector
+// is built. A later scan, once the card finishes registering, must clear that.
+func TestScanPCIeState_RescansFromDisk(t *testing.T) {
+	root := t.TempDir()
+	withPCIPath(t, root)
+
+	// A mlx5 HCA mid-registration: vendor + driver bound, but neither
+	// infiniband/ nor net/ nor an mlx5_core.rdma.* aux device exists yet.
+	writeFile(t, root, "0000:65:01.0/vendor", "0x15b3\n")
+	writeFile(t, root, "0000:65:01.0/device", "0x1021\n")
+	symlinkDriver(t, root, "0000:65:01.0", "mlx5_core")
+
+	info := &InfinibandInfo{}
+	info.scanPCIeState()
+
+	// First scan (construction-time view): the half-registered card looks lost
+	// and is not yet RDMA-capable.
+	assert.Contains(t, info.IBLostPCIDevs, "0000:65:01.0", "half-registered HCA should scan as lost initially")
+	assert.Equal(t, 0, info.IBCapablePCINum, "no infiniband/ yet -> not RDMA-capable")
+
+	// The card finishes registering: its infiniband/ directory appears.
+	if err := os.MkdirAll(filepath.Join(root, "0000:65:01.0/infiniband/mlx5_0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A subsequent scan must reflect the new state, not the frozen one.
+	info.scanPCIeState()
+
+	assert.NotContains(t, info.IBLostPCIDevs, "0000:65:01.0", "re-scan must clear a card that finished registering")
+	assert.Equal(t, 1, info.IBCapablePCINum, "re-scan must count the now RDMA-capable card")
+	assert.Contains(t, info.IBPCIDevs, "0000:65:01.0", "re-scan must refresh IBPCIDevs from disk")
+}

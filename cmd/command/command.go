@@ -79,6 +79,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(component.NewSyslogCmd())
 	rootCmd.AddCommand(component.NewTransceiverCmd())
 	rootCmd.AddCommand(component.NewLldpCmd())
+	rootCmd.AddCommand(component.NewSysinfoCmd())
 	rootCmd.AddCommand(NewConfigCmd())
 	return rootCmd
 }

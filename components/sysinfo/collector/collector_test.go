@@ -78,3 +78,10 @@ func TestCollectTimeout(t *testing.T) {
 	assert.Equal(t, StatusFailed, res.Status)
 	assert.Contains(t, res.Error, "timeout")
 }
+
+func TestCollectRejectsInsecureScheme(t *testing.T) {
+	res := Collect(context.Background(), "os_config", "http://example.com/collect.sh", 10*time.Second)
+	assert.Equal(t, StatusFailed, res.Status)
+	assert.Contains(t, res.Error, "https")
+	assert.Empty(t, res.Raw)
+}

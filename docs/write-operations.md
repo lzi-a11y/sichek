@@ -159,6 +159,8 @@ sysinfo HealthCheck（CLI 一次性）/ daemon runSource 定时 tick
   都能在所有运行 sysinfo 的节点上以 root 身份任意执行代码。
 - 与上面 3 处"判定即修复"的 autofix 不同，这里执行的是**外部下发、内容不受 sichek 自身控制的任意脚本**，风险类别
   不同（供应链 / RCE，而非本地状态误写），因此单列一节，不计入前面"三处 active 写操作"总表。
+- `Collect` 现在会在 `download` 前用 `validateURL` 校验解析出的 URL scheme：非 `https` 一律拒绝（`fail`，不 panic、不下载），
+  仅对 loopback host（`127.0.0.1` / `::1` / `localhost`）放行 `http`，以兼容测试与本地镜像，从而关闭明文中间人篡改脚本内容的 MITM 路径。
 
 ---
 

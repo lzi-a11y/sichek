@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -48,6 +50,10 @@ type SourceResult struct {
 // an Error and an empty Raw — it never returns nil and never panics.
 func Collect(ctx context.Context, name, url string, timeout time.Duration) *SourceResult {
 	res := &SourceResult{Raw: map[string]string{}, Source: url, Status: StatusOK, CollectedAt: time.Now()}
+
+	if err := validateURL(url); err != nil {
+		return fail(res, err.Error())
+	}
 
 	body, err := download(ctx, url, timeout)
 	if err != nil {
@@ -125,6 +131,31 @@ func fail(res *SourceResult, msg string) *SourceResult {
 	res.Raw = map[string]string{}
 	res.KeyCount = 0
 	return res
+}
+
+// validateURL refuses to fetch a root-executed script over an insecure scheme.
+// https is always allowed; http is allowed only for loopback hosts (tests and
+// local mirrors). Everything else is rejected.
+func validateURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse url: %w", err)
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("refusing to fetch root-executed script over insecure scheme %q (must be https): %s", u.Scheme, raw)
+}
+
+func isLoopbackHost(h string) bool {
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
 
 func sanitize(name string) string {

@@ -31,7 +31,7 @@
 - Consumes: `common.Duration`, `common.LoadUserConfig`, `httpclient.GetSichekSpecURL`, `consts.*`.
 - Produces:
   - `config.SysinfoUserConfig` (implements `common.ComponentUserConfig`), field `Sysinfo *SysinfoConfig`.
-  - `config.SysinfoConfig{Enable bool; BaseURL string; QueryInterval, Timeout common.Duration; Sources []SourceSpec}`.
+  - `config.SysinfoConfig{Enable *bool; BaseURL string; QueryInterval, Timeout common.Duration; Sources []SourceSpec}` with `func (c *SysinfoConfig) Enabled() bool` (nil→true).
   - `config.SourceSpec{Name, Path, URL string; Interval, Timeout *common.Duration; Enable *bool}`.
   - `func NewSysinfoUserConfig(cfgFile string) (*SysinfoUserConfig, error)` — loads + applies defaults; `Sysinfo` never nil.
   - `func (c *SysinfoConfig) ResolvedURL(s SourceSpec) string`
@@ -96,7 +96,7 @@ import (
 )
 
 func dur(d time.Duration) *common.Duration { return &common.Duration{Duration: d} }
-func boolp(b bool) *bool                    { return &b }
+func boolp(b bool) *bool { return &b }
 
 func TestResolvedURL(t *testing.T) {
 	c := &SysinfoConfig{BaseURL: "https://oss.example/base"}
@@ -127,6 +127,22 @@ func TestApplyDefaultsFillsZeros(t *testing.T) {
 	c.applyDefaults()
 	assert.Equal(t, 24*time.Hour, c.QueryInterval.Duration)
 	assert.Equal(t, 60*time.Second, c.Timeout.Duration)
+}
+
+func TestEnabledDefaultsTrueWhenUnset(t *testing.T) {
+	// A partial sysinfo: section that omits `enable` must NOT disable the
+	// component: Enable stays nil → Enabled() reports true.
+	c := &SysinfoConfig{}
+	assert.True(t, c.Enabled())
+	assert.False(t, (&SysinfoConfig{Enable: boolp(false)}).Enabled())
+	assert.True(t, (&SysinfoConfig{Enable: boolp(true)}).Enabled())
+}
+
+func TestBaseURLFromEnv(t *testing.T) {
+	t.Setenv("SICHEK_SYSINFO_BASE_URL", "https://env.example/base/")
+	c := &SysinfoConfig{} // no config BaseURL → env tier wins over derived/fallback
+	assert.Equal(t, "https://env.example/base/scripts/os/collect-config.sh",
+		c.ResolvedURL(SourceSpec{Path: "scripts/os/collect-config.sh"}))
 }
 ```
 
@@ -174,7 +190,7 @@ type SysinfoUserConfig struct {
 
 // SysinfoConfig holds engine-level defaults plus the data-driven source list.
 type SysinfoConfig struct {
-	Enable        bool            `json:"enable"         yaml:"enable"`
+	Enable        *bool           `json:"enable"         yaml:"enable,omitempty"`
 	BaseURL       string          `json:"base_url"       yaml:"base_url"`
 	QueryInterval common.Duration `json:"query_interval" yaml:"query_interval"`
 	Timeout       common.Duration `json:"timeout"        yaml:"timeout"`
@@ -209,13 +225,25 @@ func NewSysinfoUserConfig(cfgFile string) (*SysinfoUserConfig, error) {
 	return cfg, nil
 }
 
+func boolPtr(b bool) *bool { return &b }
+
 func defaultSysinfoConfig() *SysinfoConfig {
 	return &SysinfoConfig{
-		Enable:        true,
+		Enable:        boolPtr(true),
 		QueryInterval: common.Duration{Duration: consts.DefaultSysinfoQueryInterval},
 		Timeout:       common.Duration{Duration: consts.DefaultSysinfoTimeout},
 		Sources:       []SourceSpec{{Name: "os_config", Path: consts.DefaultSysinfoScriptPath}},
 	}
+}
+
+// Enabled reports whether the engine is enabled, defaulting to true when the
+// config omits the `enable` key entirely (a partial `sysinfo:` section that
+// sets only base_url/sources must not silently disable the component).
+func (c *SysinfoConfig) Enabled() bool {
+	if c.Enable != nil {
+		return *c.Enable
+	}
+	return true
 }
 
 // applyDefaults fills zero-valued engine knobs and applies engine-level env
@@ -233,7 +261,7 @@ func (c *SysinfoConfig) applyDefaults() {
 		}
 	}
 	if os.Getenv("SICHEK_SYSINFO_ENABLE") == "false" {
-		c.Enable = false
+		c.Enable = boolPtr(false)
 	}
 }
 
@@ -621,6 +649,8 @@ func serveScript(t *testing.T, body string) string {
 	return srv.URL
 }
 
+func bp(b bool) *bool { return &b }
+
 func newTestComponent(cfg *config.SysinfoConfig) *component {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &component{
@@ -637,7 +667,7 @@ func TestHealthCheckRunsAllSources(t *testing.T) {
 	u1 := serveScript(t, "a=1\n")
 	u2 := serveScript(t, "b=2\n")
 	c := newTestComponent(&config.SysinfoConfig{
-		Enable:  true,
+		Enable:  bp(true),
 		Timeout: common.Duration{Duration: 10 * time.Second},
 		Sources: []config.SourceSpec{{Name: "s1", URL: u1}, {Name: "s2", URL: u2}},
 	})
@@ -654,7 +684,7 @@ func TestHealthCheckRunsAllSources(t *testing.T) {
 func TestOneSourceFailureIsolated(t *testing.T) {
 	good := serveScript(t, "a=1\n")
 	c := newTestComponent(&config.SysinfoConfig{
-		Enable:  true,
+		Enable:  bp(true),
 		Timeout: common.Duration{Duration: 10 * time.Second},
 		Sources: []config.SourceSpec{
 			{Name: "good", URL: good},
@@ -671,7 +701,7 @@ func TestOneSourceFailureIsolated(t *testing.T) {
 func TestStartEmitsAndStops(t *testing.T) {
 	u1 := serveScript(t, "a=1\n")
 	c := newTestComponent(&config.SysinfoConfig{
-		Enable:        true,
+		Enable:        bp(true),
 		Timeout:       common.Duration{Duration: 10 * time.Second},
 		QueryInterval: common.Duration{Duration: time.Hour}, // ticker won't fire during test
 		Sources:       []config.SourceSpec{{Name: "s1", URL: u1}},
@@ -690,7 +720,7 @@ func TestStartEmitsAndStops(t *testing.T) {
 
 func TestDisabledSkipsCollection(t *testing.T) {
 	c := newTestComponent(&config.SysinfoConfig{
-		Enable:  false,
+		Enable:  bp(false),
 		Timeout: common.Duration{Duration: time.Second},
 		Sources: []config.SourceSpec{{Name: "s1", URL: serveScript(t, "a=1\n")}},
 	})
@@ -829,7 +859,7 @@ func (c *component) HealthCheck(ctx context.Context) (*common.Result, error) {
 	c.cfgMutex.Lock()
 	sc := c.cfg.Sysinfo
 	c.cfgMutex.Unlock()
-	if sc.Enable {
+	if sc.Enabled() {
 		for _, src := range sc.Sources {
 			if !sc.SourceEnabled(src) {
 				continue
@@ -881,7 +911,7 @@ func (c *component) startSources() {
 
 	sctx, scancel := context.WithCancel(c.ctx)
 	c.srcCancel = scancel
-	if !sc.Enable {
+	if !sc.Enabled() {
 		return
 	}
 	for _, src := range sc.Sources {

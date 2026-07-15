@@ -81,6 +81,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(component.NewTransceiverCmd())
 	rootCmd.AddCommand(component.NewOVSCmd())
 	rootCmd.AddCommand(component.NewLldpCmd())
+	rootCmd.AddCommand(component.NewSysinfoCmd())
 	rootCmd.AddCommand(NewConfigCmd())
 	return rootCmd
 }

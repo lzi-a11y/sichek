@@ -35,6 +35,7 @@ import (
 	"github.com/scitix/sichek/components/ovs"
 	"github.com/scitix/sichek/components/pcie/topotest"
 	"github.com/scitix/sichek/components/podlog"
+	"github.com/scitix/sichek/components/sysinfo"
 	"github.com/scitix/sichek/components/syslog"
 	"github.com/scitix/sichek/components/transceiver"
 	"github.com/scitix/sichek/consts"
@@ -150,7 +151,7 @@ func NewAllCmd() *cobra.Command {
 	allCmd.Flags().StringVarP(&cfgFile, "cfg", "c", "", "Path to the user config file")
 	allCmd.Flags().StringVarP(&specFile, "spec", "s", "", "Path to the sichek specification file")
 	allCmd.Flags().StringVarP(&enableComponents, "enable-components", "E", "", "Enabled components, joined by ','")
-	allCmd.Flags().StringVarP(&ignoreComponents, "ignore-components", "I", "podlog,gpuevents,syslog", "Ignored components")
+	allCmd.Flags().StringVarP(&ignoreComponents, "ignore-components", "I", "podlog,gpuevents,syslog,sysinfo", "Ignored components")
 	allCmd.Flags().StringVarP(&ignoredCheckers, "ignored-checkers", "i", "", "Ignored checkers")
 
 	return allCmd
@@ -198,6 +199,8 @@ func NewComponent(componentName string, cfgFile string, specFile string, ignored
 		return ovs.NewComponent(cfgFile, specFile, ignoredCheckers)
 	case consts.ComponentNameLLDP:
 		return lldp.NewComponent(cfgFile, specFile)
+	case consts.ComponentNameSysinfo:
+		return sysinfo.NewComponent(cfgFile, specFile)
 	default:
 		return nil, fmt.Errorf("invalid component name: %s", componentName)
 	}

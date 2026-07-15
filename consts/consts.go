@@ -49,6 +49,7 @@ const (
 	ComponentNameLLDP         = "lldp"
 	ComponentIDOVS            = "18"
 	ComponentNameOVS          = "ovs"
+	ComponentNameSysinfo      = "sysinfo"
 
 	/*----------------------checker id------------------------*/
 	CheckerIDInfinibandFW            = "4001"
@@ -100,7 +101,7 @@ var (
 	DefaultComponents = []string{
 		ComponentNameCPU, ComponentNameNvidia, ComponentNameInfiniband, ComponentNameEthernet, ComponentNameGpfs, ComponentNameDmesg,
 		ComponentNamePodlog, ComponentNameGpuEvents, ComponentNameSyslog, ComponentNameTransceiver, ComponentNameLLDP,
-		ComponentNameOVS,
+		ComponentNameOVS, ComponentNameSysinfo,
 	}
 )
 
@@ -137,6 +138,16 @@ const (
 	// OSS Spec URLs
 	DomesticSpecURL = "https://oss-cn-shanghai-2.siflow.cn/hisys:hisys-sichek-sh/specs"
 	OverseasSpecURL = "https://oss-ap-southeast.scitix.ai/hisys-sichek/specs"
+)
+
+// sysinfo (OS/host KV-script collector) defaults
+const (
+	DefaultSysinfoQueryInterval = 24 * time.Hour
+	DefaultSysinfoTimeout       = 60 * time.Second
+	DefaultSysinfoScriptPath    = "scripts/os/collect-config.sh"
+	// DomesticScriptBaseURL is the last-resort base when SICHEK_SPEC_URL is
+	// unavailable; it is DomesticSpecURL with the trailing "/specs" stripped.
+	DomesticScriptBaseURL = "https://oss-cn-shanghai-2.siflow.cn/hisys:hisys-sichek-sh"
 )
 
 const (

@@ -43,6 +43,7 @@ func NewRootCmd() *cobra.Command {
 				"run":        true,
 				"ethernet":   true,
 				"e":          true,
+				"ovs":        true,
 			}
 
 			if commandsRequireRoot[cmd.Use] {
@@ -78,6 +79,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(component.NewRoCEPerftestCmd())
 	rootCmd.AddCommand(component.NewSyslogCmd())
 	rootCmd.AddCommand(component.NewTransceiverCmd())
+	rootCmd.AddCommand(component.NewOVSCmd())
 	rootCmd.AddCommand(component.NewLldpCmd())
 	rootCmd.AddCommand(NewConfigCmd())
 	return rootCmd

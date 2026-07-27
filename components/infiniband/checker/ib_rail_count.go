@@ -50,8 +50,18 @@ import (
 //   - If an entire compute fabric dies, the max rate drops to the storage tier
 //     and the count becomes that tier's — plausible, so it passes.
 //
-// Hence Level is Warning with its own ErrorName: downstream must be able to
-// tell "this card is dead" (IBLost, Critical) from "the count looks off".
+// Level is Critical: an odd rail count means the node is missing compute
+// bandwidth and should stop taking work, same as IBLost. The ErrorName stays
+// distinct (IBRailCountOdd) because the two findings are not interchangeable —
+// IBLost names the dead function's BDF, this one can only say the count is
+// wrong — and downstream must be able to tell them apart.
+//
+// Critical raises the cost of a false positive to cordoning a node, so the
+// selection above is deliberately conservative: it is anchored on the node's
+// own hardware (model + rate) rather than on a spec, and it measured clean on
+// every node in the regression fleet. The residual exposure is a legitimate
+// topology carrying an odd number of same-model top-rate HCAs, which none of
+// the surveyed nodes has, but the fleet is larger than the surveyed set.
 type IBRailCountChecker struct {
 	name string
 	spec *config.InfinibandSpec

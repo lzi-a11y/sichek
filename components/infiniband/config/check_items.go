@@ -184,7 +184,7 @@ var InfinibandCheckItems = map[string]common.CheckerResult{
 	CheckIBRailCount: {
 		Name:        CheckIBRailCount,
 		Description: "Check if the number of compute-rail HCAs is plausible (even, or a single rail)",
-		Level:       consts.LevelWarning,
+		Level:       consts.LevelCritical,
 		Detail:      "Compute-rail HCA count is plausible",
 		ErrorName:   "IBRailCountOdd",
 		Suggestion:  "An odd rail count usually means an HCA vanished from the RDMA stack; compare against the node's expected topology and check dmesg for mlx5_core probe failures",

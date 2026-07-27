@@ -81,8 +81,8 @@ const (
 
 // TestIBRailCount_FleetTopologies pins the checker against the real topologies
 // measured across the fleet on 2026-07-27. Every healthy node must stay silent
-// — a false Warning on any of these would make the check unusable — and
-// lmg132, which had lost 0000:69:01.0, must be flagged.
+// — the finding is Critical, so a false positive on any of these would cordon
+// a working node — and lmg132, which had lost 0000:69:01.0, must be flagged.
 func TestIBRailCount_FleetTopologies(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -231,8 +231,11 @@ func TestIBRailCount_FleetTopologies(t *testing.T) {
 
 			if tt.wantAbnormal {
 				assert.Equal(t, consts.StatusAbnormal, result.Status)
-				// Heuristic checks must not cordon a node.
-				assert.Equal(t, consts.LevelWarning, result.Level)
+				// Missing compute bandwidth should take the node out of
+				// service, so this reports at the same level as IBLost.
+				assert.Equal(t, consts.LevelCritical, result.Level)
+				// ...but under its own name: unlike IBLost it cannot say
+				// which device went away.
 				assert.Equal(t, "IBRailCountOdd", result.ErrorName)
 			} else {
 				assert.Equal(t, consts.StatusNormal, result.Status,

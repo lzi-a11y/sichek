@@ -88,17 +88,37 @@ func parsePortRateGbps(portSpeed string) (float64, bool) {
 	return gbps, true
 }
 
-// computeRailDevices returns the IB devices sitting on the fastest fabric the
-// node exposes, which is the compute rail. Selecting by the node's own maximum
-// rate keeps this free of cluster-specific naming or spec lookups: a slower
-// storage/management HCA (e.g. bjg66's single 200G port alongside eight 400G
-// ports) drops out on its own.
+// computeRailDevices returns the IB devices making up the node's compute
+// fabric: group the HCAs by hardware model (board_id) and keep every device
+// belonging to a model that reaches the node's highest port rate. Deciding from
+// the node's own hardware keeps this free of cluster-specific naming and spec
+// lookups — a slower storage HCA of a different model (bjg66's lone
+// MT_0000000223 at 200G beside eight MT_0000000838 at 400G) drops out by
+// itself.
+//
+// Grouping by model rather than by rate alone is what makes the count survive a
+// degraded link. A compute rail that trains at 2X instead of 4X reports half
+// its nominal rate (e.g. "200 Gb/sec (2X NDR)"), and bucketing on the rate
+// figure would drop it, turning eight healthy rails into a suspicious seven.
+// Its board_id does not change, so its model still qualifies through its
+// healthy siblings and the device stays counted; check_ib_port_speed is what
+// reports the degradation.
+//
+// When several models tie at the top rate they are all kept (zy3 carries eight
+// NVD0000000072 compute HCAs and two MT_0000000834 storage HCAs, all at 200G).
+// Devices with no board_id fall back to being grouped by rate, which is the
+// best available approximation of "same model".
 //
 // hws must already be deduplicated per device — a dual-port HCA contributes one
 // entry per port and would otherwise be counted twice.
 func computeRailDevices(hws map[string]collector.IBHardWareInfo) (devices []string, rateGbps float64) {
-	byRate := make(map[float64][]string)
-	maxRate := -1.0
+	type modelGroup struct {
+		devs    []string
+		maxRate float64
+	}
+	groups := make(map[string]*modelGroup)
+	overallMax := -1.0
+
 	for _, hw := range hws {
 		gbps, ok := parsePortRateGbps(hw.PortSpeed)
 		if !ok {
@@ -109,17 +129,36 @@ func computeRailDevices(hws map[string]collector.IBHardWareInfo) (devices []stri
 			}).Debugf("unparseable port rate, excluding device from rail count")
 			continue
 		}
-		byRate[gbps] = append(byRate[gbps], hw.IBDev)
-		if gbps > maxRate {
-			maxRate = gbps
+		// An empty board_id carries no model identity, so fall back to
+		// grouping such devices by rate.
+		key := hw.BoardID
+		if key == "" {
+			key = fmt.Sprintf("rate:%.0f", gbps)
+		}
+		g := groups[key]
+		if g == nil {
+			g = &modelGroup{maxRate: -1}
+			groups[key] = g
+		}
+		g.devs = append(g.devs, hw.IBDev)
+		if gbps > g.maxRate {
+			g.maxRate = gbps
+		}
+		if gbps > overallMax {
+			overallMax = gbps
 		}
 	}
-	if maxRate < 0 {
+	if overallMax < 0 {
 		return nil, 0
 	}
-	devices = byRate[maxRate]
+
+	for _, g := range groups {
+		if g.maxRate == overallMax {
+			devices = append(devices, g.devs...)
+		}
+	}
 	sort.Strings(devices)
-	return devices, maxRate
+	return devices, overallMax
 }
 
 func (c *IBRailCountChecker) Check(ctx context.Context, data any) (*common.CheckerResult, error) {

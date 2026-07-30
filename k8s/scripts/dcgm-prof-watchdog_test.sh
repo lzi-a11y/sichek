@@ -80,7 +80,7 @@ check C 1 "$(calls)"; teardown
 setup
 : > "$BODY"
 env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
-    STUB_BODY="$BODY" STUB_CODE=200 WATCHDOG_MAX_LOOPS=6 MISS_THRESHOLD=1 MAX_PER_HOUR=2 \
+    STUB_BODY="$BODY" STUB_CODE=200 WATCHDOG_MAX_LOOPS=6 MISS_THRESHOLD=1 MAX_PER_HOUR=2 MAX_INEFFECTIVE_RESTARTS=99 \
     bash "$SCRIPT" >/dev/null 2>&1
 check D 2 "$(calls)"; teardown
 
@@ -120,6 +120,24 @@ env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 
     bash "$SCRIPT" >/dev/null 2>&1
 if grep -q -- "-n monitoring" "$CALLS" && grep -q -- "-l app.kubernetes.io/name=dcgm-exporter" "$CALLS" && grep -q -- "--field-selector spec.nodeName=n" "$CALLS"; then echo "PASS H"; else echo "FAIL H: $(cat "$CALLS")"; fail=1; fi
 teardown
+
+# I: PROF never returns -> give up after MAX_INEFFECTIVE_RESTARTS restarts (bounded churn)
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 WATCHDOG_MAX_LOOPS=12 MISS_THRESHOLD=1 MAX_PER_HOUR=99 MAX_INEFFECTIVE_RESTARTS=2 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check I 2 "$(calls)"; teardown
+
+# J: after giving up, PROF returning re-arms the watchdog (ineffective resets)
+setup
+: > "$SEQ/0.body"; : > "$SEQ/1.body"; : > "$SEQ/2.body"   # absent x3 -> 2 restarts then give up
+prof_line > "$SEQ/3.body"                                 # present -> re-arm
+: > "$SEQ/4.body"                                         # absent -> restart again
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_SEQ_DIR="$SEQ" WATCHDOG_MAX_LOOPS=5 MISS_THRESHOLD=1 MAX_PER_HOUR=99 MAX_INEFFECTIVE_RESTARTS=2 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check J 3 "$(calls)"; teardown
 
 if [ "$fail" -ne 0 ]; then echo "TESTS FAILED"; exit 1; fi
 echo "ALL TESTS PASSED"

@@ -17,6 +17,10 @@ POLL_SECONDS="${POLL_SECONDS:-30}"
 MISS_THRESHOLD="${MISS_THRESHOLD:-3}"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-300}"
 MAX_PER_HOUR="${MAX_PER_HOUR:-6}"
+# After this many consecutive restarts fail to bring DCGM_FI_PROF_* back, give up
+# on the node and alert instead of churning forever (e.g. nodes with no profiling
+# support, or a persistent evictor a restart cannot fix). Reset when PROF returns.
+MAX_INEFFECTIVE_RESTARTS="${MAX_INEFFECTIVE_RESTARTS:-2}"
 # HOST_CMD runs host binaries via nsenter in-cluster; tests set it empty.
 HOST_CMD="${HOST_CMD:-nsenter -t 1 -m -p -n -u -i --}"
 # WATCHDOG_MAX_LOOPS bounds the loop for tests; empty = run forever.
@@ -61,9 +65,11 @@ recent_restarts() {
   echo "$c"
 }
 
-log "starting: node=${NODE_NAME} port=${DCGM_PORT} poll=${POLL_SECONDS}s miss=${MISS_THRESHOLD} cooldown=${COOLDOWN_SECONDS}s cap=${MAX_PER_HOUR}/h"
+log "starting: node=${NODE_NAME} port=${DCGM_PORT} poll=${POLL_SECONDS}s miss=${MISS_THRESHOLD} cooldown=${COOLDOWN_SECONDS}s cap=${MAX_PER_HOUR}/h giveup_after=${MAX_INEFFECTIVE_RESTARTS}"
 miss=0
 loops=0
+ineffective=0   # consecutive restarts since PROF was last seen present
+gaveup=false    # true once we stop restarting a node whose PROF never returns
 while true; do
   resp="$(fetch)"
   code="${resp##*$'\n'}"
@@ -76,24 +82,37 @@ while true; do
     pc="$(printf '%s\n' "$body" | grep -c '^DCGM_FI_PROF_')"
     if [ "$pc" -eq 0 ]; then
       miss=$((miss + 1))
-      log "DCGM_FI_PROF_* absent (miss ${miss}/${MISS_THRESHOLD})"
+      [ "$gaveup" = true ] || log "DCGM_FI_PROF_* absent (miss ${miss}/${MISS_THRESHOLD})"
     else
       [ "$miss" -gt 0 ] && log "DCGM_FI_PROF_* present again (${pc} lines), miss reset"
+      if [ "$gaveup" = true ]; then
+        log "DCGM_FI_PROF_* restored (${pc} lines); re-arming watchdog"
+        gaveup=false
+      fi
       miss=0
+      ineffective=0
     fi
     if [ "$miss" -ge "$MISS_THRESHOLD" ]; then
-      n="$(recent_restarts)"
-      if [ "$n" -ge "$MAX_PER_HOUR" ]; then
-        log "WARN per-hour restart cap reached (${n}/${MAX_PER_HOUR}); NOT restarting"
+      if [ "$gaveup" = true ]; then
+        :   # already gave up on this node; stay quiet until PROF returns
+      elif [ "$ineffective" -ge "$MAX_INEFFECTIVE_RESTARTS" ]; then
+        gaveup=true
+        log "ALERT: restarted dcgm-exporter ${ineffective}x on ${NODE_NAME} but DCGM_FI_PROF_* did not return; giving up until PROF reappears (likely no profiling support or a persistent evictor a restart cannot fix — investigate)"
       else
-        log "restarting dcgm-exporter pod on ${NODE_NAME} (miss=${miss})"
-        if restart_dcgm; then
-          restart_times+=("$(date +%s)")
-          miss=0
-          log "restart issued; cooldown ${COOLDOWN_SECONDS}s"
-          sleep "$COOLDOWN_SECONDS"
+        n="$(recent_restarts)"
+        if [ "$n" -ge "$MAX_PER_HOUR" ]; then
+          log "WARN per-hour restart cap reached (${n}/${MAX_PER_HOUR}); NOT restarting"
         else
-          log "WARN kubectl delete failed; will retry next cycle"
+          log "restarting dcgm-exporter pod on ${NODE_NAME} (miss=${miss}, ineffective=${ineffective}/${MAX_INEFFECTIVE_RESTARTS})"
+          if restart_dcgm; then
+            restart_times+=("$(date +%s)")
+            ineffective=$((ineffective + 1))
+            miss=0
+            log "restart issued; cooldown ${COOLDOWN_SECONDS}s"
+            sleep "$COOLDOWN_SECONDS"
+          else
+            log "WARN kubectl delete failed; will retry next cycle"
+          fi
         fi
       fi
     fi

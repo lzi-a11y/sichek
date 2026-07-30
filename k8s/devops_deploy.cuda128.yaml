@@ -174,7 +174,7 @@ spec:
         - name: DCGM_PORT
           value: "9400"
         - name: DCGM_NS
-          value: "monitoring"
+          value: "scitix-monitoring"
         - name: DCGM_LABEL
           value: "app.kubernetes.io/name=dcgm-exporter"
         - name: POLL_SECONDS

@@ -30,6 +30,7 @@ trap 'rm -f "$_body"' EXIT
 fetch_code() {
   # writes body to $_body, prints HTTP code (000 if curl could not run)
   local code
+  : > "$_body"
   code="$($HOST_CMD curl -s -m 4 -o "$_body" -w '%{http_code}' \
     "http://localhost:${DCGM_PORT}/metrics" 2>/dev/null)"
   echo "${code:-000}"
@@ -42,8 +43,17 @@ prof_count() {
 }
 
 restart_dcgm() {
-  $HOST_CMD kubectl --kubeconfig="${KUBECONFIG_PATH}" delete pod \
-    -n "${DCGM_NS}" -l "${DCGM_LABEL}" \
+  local pods
+  pods="$($HOST_CMD kubectl --kubeconfig="${KUBECONFIG_PATH}" --request-timeout=10s \
+    get pod -n "${DCGM_NS}" -l "${DCGM_LABEL}" \
+    --field-selector "spec.nodeName=${NODE_NAME}" -o name 2>/dev/null)"
+  if [ -z "$pods" ]; then
+    log "WARN no dcgm-exporter pod matched (ns=${DCGM_NS} label=${DCGM_LABEL} node=${NODE_NAME}); not restarting"
+    return 1
+  fi
+  log "deleting matched dcgm-exporter pod(s): ${pods//$'\n'/ }"
+  $HOST_CMD kubectl --kubeconfig="${KUBECONFIG_PATH}" --request-timeout=10s \
+    delete pod -n "${DCGM_NS}" -l "${DCGM_LABEL}" \
     --field-selector "spec.nodeName=${NODE_NAME}"
 }
 

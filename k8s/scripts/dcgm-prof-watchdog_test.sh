@@ -21,6 +21,7 @@ out=""
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; *) shift;; esac; done
 if [ -n "${STUB_SEQ_DIR:-}" ]; then
   cf="$STUB_SEQ_DIR/.n"; n=0; [ -f "$cf" ] && n="$(cat "$cf")"; echo $((n+1)) > "$cf"
+  if [ -f "$STUB_SEQ_DIR/$n.hang" ]; then printf '200'; exit 0; fi
   if [ -n "$out" ]; then if [ -f "$STUB_SEQ_DIR/$n.body" ]; then cp "$STUB_SEQ_DIR/$n.body" "$out"; else : > "$out"; fi; fi
   if [ -f "$STUB_SEQ_DIR/$n.code" ]; then cat "$STUB_SEQ_DIR/$n.code"; else printf '200'; fi
 else
@@ -28,10 +29,15 @@ else
   printf '%s' "${STUB_CODE:-200}"
 fi
 CURL
-  # stub kubectl: record each invocation
+  # stub kubectl: record only delete invocations; answer `get ... -o name` with a
+  # fake pod name (unless STUB_NO_POD=1, then print nothing).
   cat > "$BIN/kubectl" <<KUBECTL
 #!/usr/bin/env bash
-echo "\$@" >> "$CALLS"
+if [[ "\$*" == *" delete "* ]]; then
+  echo "\$@" >> "$CALLS"
+elif [[ "\$*" == *" get "* ]]; then
+  [ -n "\${STUB_NO_POD:-}" ] || echo "pod/dcgm-exporter-stub"
+fi
 KUBECTL
   chmod +x "$BIN/curl" "$BIN/kubectl"
 }
@@ -84,6 +90,32 @@ env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 
     STUB_SEQ_DIR="$SEQ" WATCHDOG_MAX_LOOPS=4 MISS_THRESHOLD=3 \
     bash "$SCRIPT" >/dev/null 2>&1
 check E 0 "$(calls)"; teardown
+
+# F: 200 header then hung/empty body must be treated as PROF-absent (not stale-healthy)
+setup
+prof_line > "$SEQ/0.body"        # healthy
+: > "$SEQ/1.hang"; : > "$SEQ/2.hang"; : > "$SEQ/3.hang"   # 3 hangs
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_SEQ_DIR="$SEQ" WATCHDOG_MAX_LOOPS=4 MISS_THRESHOLD=3 MAX_PER_HOUR=6 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check F 1 "$(calls)"; teardown
+
+# G: selector matches no pod -> never issues a delete
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 STUB_NO_POD=1 WATCHDOG_MAX_LOOPS=4 MISS_THRESHOLD=3 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check G 0 "$(calls)"; teardown
+
+# H: the delete command targets the right ns/label/node
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 WATCHDOG_MAX_LOOPS=3 MISS_THRESHOLD=3 \
+    bash "$SCRIPT" >/dev/null 2>&1
+if grep -q -- "-n monitoring" "$CALLS" && grep -q -- "-l app.kubernetes.io/name=dcgm-exporter" "$CALLS" && grep -q -- "--field-selector spec.nodeName=n" "$CALLS"; then echo "PASS H"; else echo "FAIL H: $(cat "$CALLS")"; fail=1; fi
+teardown
 
 if [ "$fail" -ne 0 ]; then echo "TESTS FAILED"; exit 1; fi
 echo "ALL TESTS PASSED"

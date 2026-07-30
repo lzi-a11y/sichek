@@ -43,7 +43,12 @@ elif [[ "\$*" == *" get "* ]]; then
   [ -n "\${STUB_NO_POD:-}" ] || echo "pod/dcgm-exporter-stub"
 fi
 KUBECTL
-  chmod +x "$BIN/curl" "$BIN/kubectl"
+  # stub nvidia-smi: report GPU model name (default a PROF-capable model)
+  cat > "$BIN/nvidia-smi" <<'NVSMI'
+#!/usr/bin/env bash
+echo "${STUB_GPU:-NVIDIA H200}"
+NVSMI
+  chmod +x "$BIN/curl" "$BIN/kubectl" "$BIN/nvidia-smi"
 }
 teardown() { rm -rf "$TMP"; }
 calls() { wc -l < "$CALLS" | tr -d ' '; }
@@ -138,6 +143,30 @@ env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 
     STUB_SEQ_DIR="$SEQ" WATCHDOG_MAX_LOOPS=5 MISS_THRESHOLD=1 MAX_PER_HOUR=99 MAX_INEFFECTIVE_RESTARTS=2 \
     bash "$SCRIPT" >/dev/null 2>&1
 check J 3 "$(calls)"; teardown
+
+# K: PROF absent but GPU is a no-profiling model (NVIDIA L40) -> never restarts
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 STUB_GPU="NVIDIA L40" WATCHDOG_MAX_LOOPS=6 MISS_THRESHOLD=1 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check K 0 "$(calls)"; teardown
+
+# L: PROF absent but GPU is a no-profiling model (RTX 5090) -> never restarts
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 STUB_GPU="NVIDIA GeForce RTX 5090" WATCHDOG_MAX_LOOPS=6 MISS_THRESHOLD=1 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check L 0 "$(calls)"; teardown
+
+# M: PROF absent on a PROF-capable model (H200) still restarts (gate does not over-block)
+setup
+: > "$BODY"
+env HOST_CMD="" PATH="$BIN:$PATH" NODE_NAME=n POLL_SECONDS=0 COOLDOWN_SECONDS=0 \
+    STUB_BODY="$BODY" STUB_CODE=200 STUB_GPU="NVIDIA H200" WATCHDOG_MAX_LOOPS=3 MISS_THRESHOLD=3 MAX_PER_HOUR=6 \
+    bash "$SCRIPT" >/dev/null 2>&1
+check M 1 "$(calls)"; teardown
 
 if [ "$fail" -ne 0 ]; then echo "TESTS FAILED"; exit 1; fi
 echo "ALL TESTS PASSED"

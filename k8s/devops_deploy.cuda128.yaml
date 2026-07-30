@@ -207,22 +207,14 @@ spec:
 
           log() { echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [dcgm-prof-watchdog] $*"; }
 
-          _body="$(mktemp)"
-          trap 'rm -f "$_body"' EXIT
-
-          fetch_code() {
-            # writes body to $_body, prints HTTP code (000 if curl could not run)
-            local code
-            : > "$_body"
-            code="$($HOST_CMD curl -s -m 4 -o "$_body" -w '%{http_code}' \
-              "http://localhost:${DCGM_PORT}/metrics" 2>/dev/null)"
-            echo "${code:-000}"
-          }
-
-          prof_count() {
-            local c
-            c="$(grep -c '^DCGM_FI_PROF_' "$_body" 2>/dev/null)"
-            echo "${c:-0}"
+          # Fetch metrics via STDOUT (never `-o <file>`): curl runs in the host mount
+          # namespace via HOST_CMD/nsenter, so a temp file would be written in the host
+          # filesystem but read back in the container filesystem — always empty, making
+          # PROF look absent on every node. stdout crosses the nsenter boundary cleanly.
+          # Prints the response body, then a final line containing the HTTP code.
+          fetch() {
+            $HOST_CMD curl -s -m 4 -w $'\n%{http_code}' \
+              "http://localhost:${DCGM_PORT}/metrics" 2>/dev/null
           }
 
           restart_dcgm() {
@@ -256,12 +248,15 @@ spec:
           miss=0
           loops=0
           while true; do
-            code="$(fetch_code)"
+            resp="$(fetch)"
+            code="${resp##*$'\n'}"
+            body="${resp%$'\n'*}"
+            [ -n "$code" ] || code="000"
             if [ "$code" != "200" ]; then
               log "dcgm-exporter endpoint http=${code}; treating as down (skip), miss reset"
               miss=0
             else
-              pc="$(prof_count)"
+              pc="$(printf '%s\n' "$body" | grep -c '^DCGM_FI_PROF_')"
               if [ "$pc" -eq 0 ]; then
                 miss=$((miss + 1))
                 log "DCGM_FI_PROF_* absent (miss ${miss}/${MISS_THRESHOLD})"

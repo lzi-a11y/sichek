@@ -12,21 +12,25 @@ setup() {
   CALLS="$TMP/kubectl_calls"; : > "$CALLS"
   BODY="$TMP/body"; : > "$BODY"
   SEQ="$TMP/seq"; mkdir -p "$SEQ"
-  # stub curl: honor -o <file>. Two modes:
-  #   STUB_SEQ_DIR set -> per-call body/code from $SEQ/<n>.body / <n>.code (n starts at 0)
+  # stub curl: the script fetches via STDOUT (curl -w '\n%{http_code}'), never
+  # `-o <file>`. This stub emits <body> then a newline then <code> on STDOUT and
+  # ignores any -o argument. It also guards the mount-namespace regression: if the
+  # script ever went back to reading an -o temp file, the cases below would fail
+  # because this stub writes nothing to any file.
+  #   STUB_SEQ_DIR set -> per-call body/code from $SEQ/<n>.body / <n>.code (n from 0);
+  #                       $SEQ/<n>.hang => 200 with empty body (timed-out mid-body)
   #   else            -> single STUB_BODY file + STUB_CODE
   cat > "$BIN/curl" <<'CURL'
 #!/usr/bin/env bash
-out=""
-while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; *) shift;; esac; done
 if [ -n "${STUB_SEQ_DIR:-}" ]; then
   cf="$STUB_SEQ_DIR/.n"; n=0; [ -f "$cf" ] && n="$(cat "$cf")"; echo $((n+1)) > "$cf"
-  if [ -f "$STUB_SEQ_DIR/$n.hang" ]; then printf '200'; exit 0; fi
-  if [ -n "$out" ]; then if [ -f "$STUB_SEQ_DIR/$n.body" ]; then cp "$STUB_SEQ_DIR/$n.body" "$out"; else : > "$out"; fi; fi
-  if [ -f "$STUB_SEQ_DIR/$n.code" ]; then cat "$STUB_SEQ_DIR/$n.code"; else printf '200'; fi
+  if [ -f "$STUB_SEQ_DIR/$n.hang" ]; then printf '\n200'; exit 0; fi
+  [ -f "$STUB_SEQ_DIR/$n.body" ] && cat "$STUB_SEQ_DIR/$n.body"
+  code=200; [ -f "$STUB_SEQ_DIR/$n.code" ] && code="$(cat "$STUB_SEQ_DIR/$n.code")"
+  printf '\n%s' "$code"
 else
-  [ -n "$out" ] && cp "${STUB_BODY:-/dev/null}" "$out"
-  printf '%s' "${STUB_CODE:-200}"
+  [ -f "${STUB_BODY:-/dev/null}" ] && cat "${STUB_BODY:-/dev/null}"
+  printf '\n%s' "${STUB_CODE:-200}"
 fi
 CURL
   # stub kubectl: record only delete invocations; answer `get ... -o name` with a

@@ -28,6 +28,9 @@ PROF_UNSUPPORTED_GPUS="${PROF_UNSUPPORTED_GPUS:-NVIDIA L40,NVIDIA GeForce RTX 50
 HOST_CMD="${HOST_CMD:-nsenter -t 1 -m -p -n -u -i --}"
 # WATCHDOG_MAX_LOOPS bounds the loop for tests; empty = run forever.
 WATCHDOG_MAX_LOOPS="${WATCHDOG_MAX_LOOPS:-}"
+# PROBE_LOG=true logs one heartbeat line per poll (and during cooldown) so the
+# watchdog is visibly alive; set to any other value to log only actions/changes.
+PROBE_LOG="${PROBE_LOG:-true}"
 
 log() { echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [dcgm-prof-watchdog] $*"; }
 
@@ -69,6 +72,20 @@ recent_restarts() {
   echo "$c"
 }
 
+# Sleep the cooldown in chunks, emitting a heartbeat, so the log does not go
+# silent for the whole cooldown (which looks like the watchdog has hung).
+cooldown_wait() {
+  local left="$COOLDOWN_SECONDS"
+  while [ "$left" -gt 0 ]; do
+    if [ "$left" -le 30 ]; then
+      sleep "$left"; left=0
+    else
+      sleep 30; left=$((left - 30))
+      [ "$PROBE_LOG" = true ] && log "cooldown: ${left}s remaining"
+    fi
+  done
+}
+
 # GPU-model gate: some models never expose DCGM_FI_PROF_*, so their absence is
 # expected and must NOT trigger a restart.
 NODE_GPU_NAMES=""
@@ -105,11 +122,17 @@ while true; do
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   [ -n "$code" ] || code="000"
+  if [ "$code" = "200" ]; then
+    pc="$(printf '%s\n' "$body" | grep -c '^DCGM_FI_PROF_')"
+  else
+    pc="-"
+  fi
+  [ "$PROBE_LOG" = true ] && log "probe: http=${code} prof=${pc}$([ "$gaveup" = true ] && printf ' (gaveup)')"
   if [ "$code" != "200" ]; then
-    log "dcgm-exporter endpoint http=${code}; treating as down (skip), miss reset"
+    # curl could not reach 127.0.0.1:${DCGM_PORT} (or non-200): ignore, do not
+    # probe further, do not restart.
     miss=0
   else
-    pc="$(printf '%s\n' "$body" | grep -c '^DCGM_FI_PROF_')"
     if [ "$pc" -gt 0 ]; then
       [ "$miss" -gt 0 ] && log "DCGM_FI_PROF_* present again (${pc} lines), miss reset"
       if [ "$gaveup" = true ]; then
@@ -145,7 +168,7 @@ while true; do
               ineffective=$((ineffective + 1))
               miss=0
               log "restart issued; cooldown ${COOLDOWN_SECONDS}s"
-              sleep "$COOLDOWN_SECONDS"
+              cooldown_wait
             else
               log "WARN kubectl delete failed; will retry next cycle"
             fi

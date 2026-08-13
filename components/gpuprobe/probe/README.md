@@ -45,3 +45,33 @@ git commit -m "feat(gpuprobe): 预编译探针 ELF 入仓(amd64/arm64)"
 - 目标节点驱动发生重大变更，需要重新验证兼容性
 
 修改 `GENCODE` 时保持覆盖所有在线集群的 GPU 架构；当前默认覆盖 Ampere(80) / Hopper(90) / Blackwell(100,120)。
+
+## 打包（随 sichek 发布）
+
+**以下改动是延后事项 —— 仅在 ELF 已构建并按上文 `git add -f` 入仓之后再做。** 现在 `../bin/gpu_probe.amd64`（及 `.arm64`）还不存在，若提前把 `src` 指向它们，`goreleaser`/`make` 的打包构建会因为源文件缺失直接失败。ELF 落地后，按下面两处补线：
+
+### 1. `.goreleaser.yaml`
+
+在 nfpm 的 `contents:` 列表里追加一条：
+
+```yaml
+    - src: ./components/gpuprobe/bin/gpu_probe.amd64
+      dst: /var/sichek/bin/gpu_probe
+      file_info:
+        mode: 0755
+```
+
+goreleaser 当前只构建 linux/amd64；后续若补上 arm64 打包，再为 `gpu_probe.arm64` 加一条平行的 `contents` 条目（`dst` 同样是 `/var/sichek/bin/gpu_probe`，随该平台的构建产物走）。
+
+### 2. `docker/Dockerfile`
+
+在最终运行时 stage 里补一条 `COPY` 和权限位（届时以 `docker/Dockerfile` 实际的 stage 划分 / 目录布局为准，不要照抄下面的行号或路径假设）：
+
+```dockerfile
+COPY components/gpuprobe/bin/gpu_probe.amd64 /var/sichek/bin/gpu_probe
+RUN chmod 0755 /var/sichek/bin/gpu_probe
+```
+
+### 为什么现在不做
+
+`.goreleaser.yaml` 与 `docker/Dockerfile` 的 `src`/`COPY` 都是相对路径的强校验：文件不存在就直接 fail 整个 release / docker build。这两处改动必须与「探针 ELF 已构建并提交」同一个变更集完成，不能提前落地。

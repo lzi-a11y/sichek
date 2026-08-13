@@ -17,10 +17,16 @@ package collector
 
 import (
 	"context"
-	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// defaultSmiTimeout bounds every nvidia-smi invocation so a GPU wedged in a D-state
+// driver ioctl (which can hang nvidia-smi itself) cannot block Collect. Because the
+// reentrancy latch is acquired before the gating queries run, an unbounded hang here
+// would leave the latch stuck and silently stop probing every GPU on the node.
+const defaultSmiTimeout = 15 * time.Second
 
 // gpuStat 一张卡的门控原始读数。
 type gpuStat struct {
@@ -31,10 +37,10 @@ type gpuStat struct {
 	MigEnabled bool
 }
 
-// nvidiaSmi 允许测试注入假命令。默认真跑 nvidia-smi。
+// nvidiaSmi 允许测试注入假命令。默认真跑 nvidia-smi，但经 execBounded 包住，
+// 保证即便 nvidia-smi 在 hung GPU 上卡死也会在 defaultSmiTimeout 后返回错误。
 var nvidiaSmi = func(ctx context.Context, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, "nvidia-smi", args...).Output()
-	return string(out), err
+	return execBounded(ctx, defaultSmiTimeout, "nvidia-smi", args...)
 }
 
 // queryGPUs 返回每卡门控读数；无 GPU / nvidia-smi 缺失时返回空切片。

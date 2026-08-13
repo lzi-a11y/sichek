@@ -18,6 +18,7 @@ package collector
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -26,6 +27,38 @@ import (
 
 	"github.com/sirupsen/logrus"
 )
+
+// execBounded runs name+args capturing combined output, returning after at most
+// `timeout` even if the process wedges — e.g. nvidia-smi blocked in a D-state driver
+// ioctl on a hung GPU. On timeout it kills the process group and abandons the
+// (unkillable) child, returning an error so the caller never blocks forever. This is
+// the same non-blocking discipline runProbe applies to the probe binary, applied to
+// the gating queries: a wedged GPU is the exact condition gpuprobe must survive, and
+// it is precisely what can make nvidia-smi itself hang.
+func execBounded(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	done := make(chan error, 1) // buffered: abandoned Wait goroutine can still send and exit
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return buf.String(), err // Wait returned → buf has no concurrent writer
+	case <-timer.C:
+		killProcessGroup(cmd)
+		return "", fmt.Errorf("%s timed out after %s (possible hung GPU)", name, timeout)
+	case <-ctx.Done():
+		killProcessGroup(cmd)
+		return "", ctx.Err()
+	}
+}
 
 // runProbe execs the probe on one GPU, classifies the exit code, and reclaims the
 // child rigorously. On timeout it kills the whole process group and waits at most

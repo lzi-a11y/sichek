@@ -133,6 +133,22 @@ func TestCollect_MigSkipped(t *testing.T) {
 	assert.Contains(t, gi.PerGPU[0].Detail, "MIG")
 }
 
+// TestExecBounded_TimesOutPromptly proves the gating exec cannot block the caller
+// past its timeout even if the underlying command hangs (the wedged-nvidia-smi case).
+func TestExecBounded_TimesOutPromptly(t *testing.T) {
+	start := time.Now()
+	out, err := execBounded(context.Background(), 500*time.Millisecond, "sh", "-c", "sleep 10")
+	assert.Error(t, err)
+	assert.Empty(t, out)
+	assert.Less(t, time.Since(start), 3*time.Second) // did not wait for the 10s sleep
+}
+
+func TestExecBounded_CapturesOutputOnSuccess(t *testing.T) {
+	out, err := execBounded(context.Background(), 5*time.Second, "sh", "-c", "echo hello")
+	require.NoError(t, err)
+	assert.Contains(t, out, "hello")
+}
+
 func TestCollect_NoGPU(t *testing.T) {
 	nvidiaSmi = func(ctx context.Context, args ...string) (string, error) { return "", nil }
 	defer func() { nvidiaSmi = realNvidiaSmi }()

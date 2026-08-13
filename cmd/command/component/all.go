@@ -29,6 +29,7 @@ import (
 	"github.com/scitix/sichek/components/ethernet"
 	"github.com/scitix/sichek/components/gpfs"
 	gpuevents "github.com/scitix/sichek/components/gpuevents"
+	"github.com/scitix/sichek/components/gpuprobe"
 	"github.com/scitix/sichek/components/infiniband"
 	"github.com/scitix/sichek/components/lldp"
 	"github.com/scitix/sichek/components/nvidia"
@@ -182,6 +183,11 @@ func NewComponent(componentName string, cfgFile string, specFile string, ignored
 			return nil, fmt.Errorf("nvidia GPU is not Exist. Bypassing Nvidia GPU HealthCheck")
 		}
 		return nvidia.NewComponent(cfgFile, specFile, ignoredCheckers)
+	case consts.ComponentNameGPUProbe:
+		if !utils.IsNvidiaGPUExist() {
+			return nil, fmt.Errorf("nvidia GPU is not Exist. Bypassing GpuProbe HealthCheck")
+		}
+		return gpuprobe.NewComponent(cfgFile, specFile)
 	case consts.ComponentNamePodlog:
 		if !utils.IsNvidiaGPUExist() {
 			return nil, fmt.Errorf("nvidia GPU is not Exist. Bypassing PodLog HealthCheck")

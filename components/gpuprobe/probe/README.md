@@ -48,11 +48,11 @@ git commit -m "feat(gpuprobe): 预编译探针 ELF 入仓(amd64/arm64)"
 
 ## 打包（随 sichek 发布）
 
-**以下改动是延后事项 —— 仅在 ELF 已构建并按上文 `git add -f` 入仓之后再做。** 现在 `../bin/gpu_probe.amd64`（及 `.arm64`）还不存在，若提前把 `src` 指向它们，`goreleaser`/`make` 的打包构建会因为源文件缺失直接失败。ELF 落地后，按下面两处补线：
+amd64 ELF 已入仓，打包接线**已完成**：
 
-### 1. `.goreleaser.yaml`
+### 1. `.goreleaser.yaml`（已接）
 
-在 nfpm 的 `contents:` 列表里追加一条：
+nfpm 的 `contents:` 里已追加：
 
 ```yaml
     - src: ./components/gpuprobe/bin/gpu_probe.amd64
@@ -61,17 +61,28 @@ git commit -m "feat(gpuprobe): 预编译探针 ELF 入仓(amd64/arm64)"
         mode: 0755
 ```
 
-goreleaser 当前只构建 linux/amd64；后续若补上 arm64 打包，再为 `gpu_probe.arm64` 加一条平行的 `contents` 条目（`dst` 同样是 `/var/sichek/bin/gpu_probe`，随该平台的构建产物走）。
+goreleaser 当前只构建 linux/amd64。
 
-### 2. `docker/Dockerfile`
+### 2. `docker/Dockerfile`（无需改）
 
-在最终运行时 stage 里补一条 `COPY` 和权限位（届时以 `docker/Dockerfile` 实际的 stage 划分 / 目录布局为准，不要照抄下面的行号或路径假设）：
+镜像通过 `dpkg -i sichek_*.deb` 安装，deb 已由上面的 nfpm 条目带上 `/var/sichek/bin/gpu_probe`，**Docker 镜像自动继承，无需单独 `COPY`**。
 
-```dockerfile
-COPY components/gpuprobe/bin/gpu_probe.amd64 /var/sichek/bin/gpu_probe
-RUN chmod 0755 /var/sichek/bin/gpu_probe
+### arm64（仅 Grace 系需要）
+
+若有 Grace+Blackwell（GB200/GB300 等 aarch64 宿主）机型，需另编 `gpu_probe.arm64`（arm64 CUDA devel 镜像 + qemu，或 arm64 宿主），并为其加一条平行的 nfpm `contents`（`dst` 同为 `/var/sichek/bin/gpu_probe`，随 arm64 构建产物走）。纯 x86 宿主（HGX/DGX B300、H200 服务器、5090 工作站）用 amd64 即可。
+
+### 重新编译（用 docker，不需 GPU）
+
+```bash
+mkdir -p components/gpuprobe/bin
+docker run --rm -v "$(pwd)/components/gpuprobe:/work" -w /work/probe \
+  nvidia/cuda:12.8.1-devel-ubuntu22.04 \
+  nvcc -gencode arch=compute_80,code=sm_80 \
+       -gencode arch=compute_90,code=sm_90 \
+       -gencode arch=compute_100,code=sm_100 \
+       -gencode arch=compute_120,code=sm_120 \
+       -gencode arch=compute_90,code=compute_90 \
+       -O2 gpu_probe.cu -o ../bin/gpu_probe.amd64 \
+       -lcudart_static -ldl -lrt -lpthread
+git add components/gpuprobe/bin/gpu_probe.amd64
 ```
-
-### 为什么现在不做
-
-`.goreleaser.yaml` 与 `docker/Dockerfile` 的 `src`/`COPY` 都是相对路径的强校验：文件不存在就直接 fail 整个 release / docker build。这两处改动必须与「探针 ELF 已构建并提交」同一个变更集完成，不能提前落地。

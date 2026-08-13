@@ -127,21 +127,11 @@ func DetermineComponentsToCheck(enableComponents string, ignoredComponents strin
 			ignoredComponentsList = strings.Split(ignoredComponents, ",")
 		}
 		for _, comp := range configComponents {
-			if slices.Contains(ignoredComponentsList, comp) {
-				continue
+			if !slices.Contains(ignoredComponentsList, comp) {
+				componentsToCheck = append(componentsToCheck, comp)
 			}
-			// The config-driven path only auto-runs components in DefaultComponents.
-			// Non-default components (e.g. gpuprobe) whose config section merely exists
-			// stay off unless the operator enables them explicitly via -E. This gate
-			// used to live in the all/daemon execution loops; moving it here lets an
-			// explicit -E list include non-default components while keeping the default
-			// run set unchanged.
-			if !slices.Contains(consts.DefaultComponents, comp) {
-				continue
-			}
-			componentsToCheck = append(componentsToCheck, comp)
 		}
-		logrus.WithField(logField, logField).Infof("using components from config (excluding -I, non-default off): %v", componentsToCheck)
+		logrus.WithField(logField, logField).Infof("using components from config (excluding -I): %v", componentsToCheck)
 	}
 	return componentsToCheck
 }

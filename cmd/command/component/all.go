@@ -98,10 +98,14 @@ func NewAllCmd() *cobra.Command {
 				if componentName == consts.ComponentNameInfiniband && !utils.IsInfinibandExist() {
 					continue
 				}
-				// Which components run is decided in DetermineComponentsToCheck (the
-				// config path is filtered to DefaultComponents there; an explicit -E
-				// list is honored as-is). Unknown names fail NewComponent below and are
-				// skipped, so no DefaultComponents gate is needed here.
+				// Config-driven runs (no -E) are gated to DefaultComponents, which also
+				// leaves pseudo-keys like nccltest/pcie_topo in componentsToCheck for the
+				// after-loop special cases below. An explicit -E list is honored as-is so
+				// opt-in components (e.g. gpuprobe) can run; unknown -E names fail
+				// NewComponent and are skipped.
+				if len(enableComponents) == 0 && !slices.Contains(consts.DefaultComponents, componentName) {
+					continue
+				}
 				wg.Add(1)
 				go func(idx int, componentName string) {
 					defer wg.Done()

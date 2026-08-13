@@ -19,6 +19,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"slices"
 	"time"
 
 	"github.com/scitix/sichek/cmd/command/component"
@@ -140,10 +141,12 @@ func NewDaemonRunCmd() *cobra.Command {
 				if componentName == consts.ComponentNameInfiniband && !utils.IsInfinibandExist() {
 					continue
 				}
-				// Component selection (including the DefaultComponents gate for the
-				// config-driven path) is resolved in DetermineComponentsToCheck; an
-				// explicit -E list is honored as-is. Unknown names fail NewComponent
-				// below and are skipped.
+				// Config-driven runs (no -E) are gated to DefaultComponents. An explicit
+				// -E list is honored as-is so opt-in components (e.g. gpuprobe) can run;
+				// unknown -E names fail NewComponent and are skipped below.
+				if len(usedComponentStr) == 0 && !slices.Contains(consts.DefaultComponents, componentName) {
+					continue
+				}
 				component, err := component.NewComponent(componentName, cfgFile, specFile, nil)
 				if err != nil {
 					logrus.WithField("daemon", "run").Errorf("failed to create component %s: %v, skipping", componentName, err)

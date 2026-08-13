@@ -98,9 +98,10 @@ func NewAllCmd() *cobra.Command {
 				if componentName == consts.ComponentNameInfiniband && !utils.IsInfinibandExist() {
 					continue
 				}
-				if !slices.Contains(consts.DefaultComponents, componentName) {
-					continue
-				}
+				// Which components run is decided in DetermineComponentsToCheck (the
+				// config path is filtered to DefaultComponents there; an explicit -E
+				// list is honored as-is). Unknown names fail NewComponent below and are
+				// skipped, so no DefaultComponents gate is needed here.
 				wg.Add(1)
 				go func(idx int, componentName string) {
 					defer wg.Done()

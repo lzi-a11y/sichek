@@ -73,10 +73,15 @@ goreleaser 当前只构建 linux/amd64。
 
 ### 重新编译（用 docker，不需 GPU）
 
+**务必用 ubuntu20.04(glibc 2.31)基础镜像编译**,产物只需 GLIBC_2.17,可在全 fleet
+运行(含 Anolis/al8 等老 glibc 节点,glibc 2.32);用 ubuntu22.04 编会引入 GLIBC_2.34
+依赖(pthread 并入 libc),在老 glibc 节点报 `version 'GLIBC_2.34' not found`。
+**不要用 CUDA 13**(静态 cudart 要求驱动 ≥580,会砸掉老驱动节点;详见组件文档)。
+
 ```bash
 mkdir -p components/gpuprobe/bin
 docker run --rm -v "$(pwd)/components/gpuprobe:/work" -w /work/probe \
-  nvidia/cuda:12.8.1-devel-ubuntu22.04 \
+  nvidia/cuda:12.8.1-devel-ubuntu20.04 \
   nvcc -gencode arch=compute_80,code=sm_80 \
        -gencode arch=compute_90,code=sm_90 \
        -gencode arch=compute_100,code=sm_100 \
@@ -85,4 +90,5 @@ docker run --rm -v "$(pwd)/components/gpuprobe:/work" -w /work/probe \
        -O2 gpu_probe.cu -o ../bin/gpu_probe.amd64 \
        -lcudart_static -ldl -lrt -lpthread
 git add components/gpuprobe/bin/gpu_probe.amd64
+# B300 是 sm_103,由 compute_90 PTX 前向 JIT 覆盖(无需 sm_103 SASS)。
 ```

@@ -17,9 +17,11 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +53,28 @@ func writeSleepProbe(t *testing.T, seconds int) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "gpu_probe")
 	require.NoError(t, os.WriteFile(p, []byte("#!/bin/sh\nsleep "+strconv.Itoa(seconds)+"\n"), 0755))
+	return p
+}
+
+// idleNGPUs returns a stub reporting n idle GPUs (util 0, ~99% free, no MIG, no procs).
+func idleNGPUs(n int) func(ctx context.Context, args ...string) (string, error) {
+	return func(ctx context.Context, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "--query-compute-apps=pid" {
+			return "", nil
+		}
+		var b strings.Builder
+		for i := range n {
+			fmt.Fprintf(&b, "%d, 00000000:%02X:00.0, 0, 100, 81920, Disabled\n", i, 0x10+i)
+		}
+		return b.String(), nil
+	}
+}
+
+// writeSlowPassProbe writes a fake probe that sleeps `seconds` then reports PASS.
+func writeSlowPassProbe(t *testing.T, seconds int) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "gpu_probe")
+	require.NoError(t, os.WriteFile(p, []byte("#!/bin/sh\nsleep "+strconv.Itoa(seconds)+"\necho RESULT=PASS\nexit 0\n"), 0755))
 	return p
 }
 
@@ -147,6 +171,31 @@ func TestExecBounded_CapturesOutputOnSuccess(t *testing.T) {
 	out, err := execBounded(context.Background(), 5*time.Second, "sh", "-c", "echo hello")
 	require.NoError(t, err)
 	assert.Contains(t, out, "hello")
+}
+
+// TestCollect_ConcurrentIdleProbes proves idle-GPU probes run in parallel: 4 GPUs
+// each with a 1s probe finish in ~1s wall-clock, not ~4s (serial). This is what keeps
+// an all-idle multi-GPU node (e.g. 8× B300 with multi-second CUDA init) under the
+// command timeout.
+func TestCollect_ConcurrentIdleProbes(t *testing.T) {
+	nvidiaSmi = idleNGPUs(4)
+	defer func() { nvidiaSmi = realNvidiaSmi }()
+	spec := config.DefaultSpec()
+	spec.ProbeBinaryPath = writeSlowPassProbe(t, 1)
+	spec.ProbeTimeoutSec = 10
+
+	start := time.Now()
+	info, err := NewGpuProbeCollector(spec).Collect(context.Background())
+	elapsed := time.Since(start)
+	require.NoError(t, err)
+	gi := info.(*GpuProbeInfo)
+
+	require.Len(t, gi.PerGPU, 4)
+	for i, g := range gi.PerGPU {
+		assert.Equal(t, i, g.Index, "PerGPU keeps enumeration order")
+		assert.Equal(t, OutcomePass, g.Outcome)
+	}
+	assert.Less(t, elapsed, 2500*time.Millisecond, "4×1s probes ran concurrently (~1s), not serially (~4s)")
 }
 
 func TestCollect_NoGPU(t *testing.T) {

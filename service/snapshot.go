@@ -39,10 +39,16 @@ type SnapshotConfig struct {
 
 // Snapshot represents the aggregated data from all components.
 type Snapshot struct {
-	Node       string                 `json:"node"`
-	MgmtIP     string                 `json:"mgmt_ip,omitempty"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Components map[string]interface{} `json:"components"`
+	Node   string `json:"node"`
+	MgmtIP string `json:"mgmt_ip,omitempty"`
+	// BootTime is the node's boot instant. It is stable for the life of the
+	// process, so it is computed once at startup.
+	BootTime time.Time `json:"boot_time,omitempty"`
+	// UptimeSeconds is the node's uptime in seconds, refreshed to the current
+	// value on every persist.
+	UptimeSeconds float64                `json:"uptime_seconds,omitempty"`
+	Timestamp     time.Time              `json:"timestamp"`
+	Components    map[string]interface{} `json:"components"`
 	// Issues mirrors the K8s node annotation: detected problems grouped by
 	// component then level. It lets the collector consume issues without reading
 	// the K8s annotation, and is populated even on non-K8s nodes.
@@ -73,6 +79,10 @@ func NewSnapshotManager(cfgFile string) (*SnapshotManager, error) {
 	}
 
 	hostname, _ := os.Hostname()
+	bootTime, err := utils.GetBootTime()
+	if err != nil {
+		logrus.WithField("service", "snapshot").Warnf("Failed to read boot time: %v", err)
+	}
 	mgr := &SnapshotManager{
 		path:     config.Snapshot.Path,
 		enabled:  config.Snapshot.Enable,
@@ -80,6 +90,7 @@ func NewSnapshotManager(cfgFile string) (*SnapshotManager, error) {
 		data: &Snapshot{
 			Node:       hostname,
 			MgmtIP:     utils.GetMgmtIP(),
+			BootTime:   bootTime,
 			Components: make(map[string]interface{}),
 		},
 	}
@@ -130,7 +141,15 @@ func (s *SnapshotManager) SetIssues(issues *nodeAnnotation) {
 }
 
 // persist writes the current snapshot to the local JSON file atomically.
+// It refreshes UptimeSeconds to the current value before marshaling; a read
+// failure leaves the previous value untouched rather than blocking the write.
 func (s *SnapshotManager) persist() error {
+	if uptime, err := utils.GetUptime(); err != nil {
+		logrus.WithField("service", "snapshot").Warnf("Failed to read uptime: %v", err)
+	} else {
+		s.data.UptimeSeconds = uptime
+	}
+
 	data, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal snapshot failed: %w", err)

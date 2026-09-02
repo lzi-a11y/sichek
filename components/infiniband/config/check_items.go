@@ -40,7 +40,15 @@ const (
 	CheckPCIETreeWidth = "check_pcie_tree_width"
 	CheckIBLost        = "check_ib_lost"
 	CheckIBRailCount   = "check_ib_rail_count"
+	CheckIBMezzName    = "check_ib_mezz_name"
 )
+
+// MezzBoardID is the firmware PSID (board_id) that uniquely identifies an internal
+// IB mezzanine card. Per rdma-env-pre docs/mezz-card-identification.md this is the
+// only reliable discriminator: mezz and CX7 both report PCI device 0x1021, so only
+// board_id tells them apart. A mezz card has no HCA spec by design (it is
+// identified but never configured).
+const MezzBoardID = "NVD0000000079"
 
 var InfinibandCheckItems = map[string]common.CheckerResult{
 	CheckIBOFED: {
@@ -170,5 +178,13 @@ var InfinibandCheckItems = map[string]common.CheckerResult{
 		Detail:      "Compute-rail HCA count is plausible",
 		ErrorName:   "IBRailCountOdd",
 		Suggestion:  "An odd rail count usually means an HCA vanished from the RDMA stack; compare against the node's expected topology and check dmesg for mlx5_core probe failures",
+	},
+	CheckIBMezzName: {
+		Name:        CheckIBMezzName,
+		Description: "Check that each mezz card (board_id NVD0000000079) RDMA device is named mezz_<k>",
+		Level:       consts.LevelCritical,
+		Detail:      "All mezz cards are named per the mezz_<k> convention",
+		ErrorName:   "IBMezzNameMismatch",
+		Suggestion:  "The mezz card was not renamed to mezz_<k>; ensure rdma-env-pre interface-naming ran on this node",
 	},
 }

@@ -41,9 +41,10 @@ const defaultIBSysDir = "/sys/class/infiniband"
 // this checker exists to catch.
 var mezzNameRe = regexp.MustCompile(`^mezz_\d+$`)
 
-// IBMezzNameChecker verifies that every mezz card (identified solely by board_id
-// config.MezzBoardID, per rdma-env-pre docs/mezz-card-identification.md) has its
-// RDMA device named per the mezz_<k> convention.
+// IBMezzNameChecker verifies that every mezz card (identified solely by its
+// board_id being in config.MezzBoardIDs, per rdma-env-pre
+// docs/mezz-card-identification.md) has its RDMA device named per the mezz_<k>
+// convention.
 //
 // It is deliberately spec-free: it reads sysfs directly rather than the collected
 // InfinibandInfo, so its verdict is identical whether it runs on the healthy path
@@ -72,7 +73,7 @@ func MezzNamingResult() *common.CheckerResult {
 }
 
 // mezzNamingResultAt is the testable core: it scans sysRoot (…/sys/class/infiniband)
-// for mezz cards (board_id == config.MezzBoardID) and checks each one's device
+// for mezz cards (board_id in config.MezzBoardIDs) and checks each one's device
 // directory name against mezz_<k>. Non-mezz devices are ignored; a host with no
 // mezz card (or no IB sysfs at all) passes.
 func mezzNamingResultAt(sysRoot string) *common.CheckerResult {
@@ -91,7 +92,7 @@ func mezzNamingResultAt(sysRoot string) *common.CheckerResult {
 	var bad []string
 	for _, e := range entries {
 		dev := e.Name()
-		if readSysAttr(filepath.Join(sysRoot, dev, "board_id")) != config.MezzBoardID {
+		if !config.MezzBoardIDs[readSysAttr(filepath.Join(sysRoot, dev, "board_id"))] {
 			continue // not a mezz card
 		}
 		netdev := mezzNetdevName(dev) // mezz_0 -> mezz0 (display only, not validated)

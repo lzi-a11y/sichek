@@ -10,7 +10,18 @@
 
 ## mezz 卡的判据(硬编码)
 
-依据 `rdma-env-pre` 文档 `docs/mezz-card-identification.md`:**mezz 的唯一判据是 board_id(固件 PSID)`NVD0000000079`**。PCI vendor:device(`0x1021`)与 CX7 相同,不能用来区分,只有 board_id 能分开。因此本检查以硬编码常量 `MezzBoardID = "NVD0000000079"` 锚定 mezz 卡。
+依据 `rdma-env-pre` 文档 `docs/mezz-card-identification.md`:**mezz 的判据是 board_id(固件 PSID)**。PCI vendor:device(`0x1021`)与 CX7 相同,不能用来区分,只有 board_id 能分开。
+
+board_id **跨 GPU 代不同**,因此以硬编码集合锚定:
+
+```go
+var MezzBoardIDs = map[string]bool{
+    "NVD0000000079": true, // B300 (gpu-10-220-55-90 实测)
+    "MT_0000001121": true, // B200 (gpu-10-220-55-7 实测)
+}
+```
+
+新代出货需在此扩充。注意上游 `rdma-env-pre` 的 `internal-mezz-ib.json` 目前只声明 `NVD0000000079`,B200 的 `MT_0000001121` 由真机 B200 节点实测得到(4 张命名为 `mezz_0..3` 的内部卡,board_id 一致,与 compute HCA `MT_0000000838` 分离),应与上游 owner 对齐后同步维护。
 
 ## 关键约束:不依赖 spec、不走 spec-gated 路径
 
@@ -46,7 +57,7 @@ IB 组件在 `newInfinibandComponent` 里先 `LoadSpec`(→ `FilterSpec`);当某
 ## 两条运行路径(方案 A)
 
 1. **正常路径**:注册为普通 IB checker(`NewIBMezzNameChecker`),`Check(ctx, data)` 忽略传入 data、直接调 `mezzNamingResultAt` 默认根,随 `common.Check` 与其它 checker 一起跑。
-2. **initError 路径**:在 `HealthCheck` 的 `if c.initError != nil` 分支里,把 `mezzNamingResultAt` 的结果 append 进 `reportInitErrorResult()` 的 `Checkers`,并在 mezz 判 Critical-abnormal 时确保返回结果的 `Status/Level` 反映出来。
+2. **initError 路径**:在 `HealthCheck` 的 `if c.initError != nil` 分支里调 `MezzNamingResult()`,**仅当结果为 abnormal 时**才 append 进 `reportInitErrorResult()` 的 `Checkers`。原因:initError 分支的 `PrintInfo` 会把结果里每个 checker 无条件标红并打 `ErrorName`,若把一个 Normal/无-mezz 的结果也 append 进去,会被渲染成误导性的红色"失败"行。因此只在 mezz 命名**真的失败**时才在此路径浮现。
 
 两条路径调用同一个 `mezzNamingResultAt`,判定完全一致。**不改 `FilterSpec`;只在 HealthCheck 的 initError 分支加几行独立调用。**
 

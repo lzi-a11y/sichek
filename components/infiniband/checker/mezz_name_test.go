@@ -45,7 +45,11 @@ func writeIBSysfs(t *testing.T, root string, devs map[string]fakeDev) {
 }
 
 func TestMezzNamingResultAt(t *testing.T) {
-	const cx7Board = "MT_0000000834" // a non-mezz HCA board_id
+	const (
+		b300Mezz = "NVD0000000079" // B300 mezz board_id
+		b200Mezz = "MT_0000001121" // B200 mezz board_id
+		cx7Board = "MT_0000000834" // a non-mezz HCA board_id
+	)
 
 	tests := []struct {
 		name       string
@@ -58,8 +62,8 @@ func TestMezzNamingResultAt(t *testing.T) {
 		{
 			name: "mezz named correctly -> normal",
 			devs: map[string]fakeDev{
-				"mezz_0": {config.MezzBoardID, "5: LinkUp"},
-				"mezz_1": {config.MezzBoardID, "2: Polling"},
+				"mezz_0": {b300Mezz, "5: LinkUp"},
+				"mezz_1": {b300Mezz, "2: Polling"},
 			},
 			wantStatus: consts.StatusNormal,
 			wantDetail: []string{"mezz_0 port 1 ==> mezz0 (Up)", "mezz_1 port 1 ==> mezz1 (Down)"},
@@ -67,11 +71,29 @@ func TestMezzNamingResultAt(t *testing.T) {
 		{
 			name: "mezz misnamed -> critical abnormal",
 			devs: map[string]fakeDev{
-				"mlx5_9": {config.MezzBoardID, "2: Polling"},
+				"mlx5_9": {b300Mezz, "2: Polling"},
 			},
 			wantStatus: consts.StatusAbnormal,
 			wantDevice: "mlx5_9",
 			wantDetail: []string{"mlx5_9 port 1 ==> mlx5_9 (Down)", "expected mezz_<k>"},
+		},
+		{
+			name: "B200 mezz board_id also recognized, named correctly -> normal",
+			devs: map[string]fakeDev{
+				"mezz_0": {b200Mezz, "5: LinkUp"},
+				"mezz_1": {b200Mezz, "5: LinkUp"},
+			},
+			wantStatus: consts.StatusNormal,
+			wantDetail: []string{"mezz_0 port 1 ==> mezz0 (Up)", "mezz_1 port 1 ==> mezz1 (Up)"},
+		},
+		{
+			name: "B200 mezz misnamed -> critical abnormal",
+			devs: map[string]fakeDev{
+				"mlx5_8": {b200Mezz, "2: Polling"},
+			},
+			wantStatus: consts.StatusAbnormal,
+			wantDevice: "mlx5_8",
+			wantDetail: []string{"mlx5_8 port 1 ==> mlx5_8 (Down)", "expected mezz_<k>"},
 		},
 		{
 			name: "no mezz card (only CX7) -> normal",
@@ -84,8 +106,8 @@ func TestMezzNamingResultAt(t *testing.T) {
 		{
 			name: "mixed: one good one bad -> abnormal, only bad reported",
 			devs: map[string]fakeDev{
-				"mezz_0":  {config.MezzBoardID, "5: LinkUp"},
-				"badmezz": {config.MezzBoardID, "5: LinkUp"},
+				"mezz_0":  {b300Mezz, "5: LinkUp"},
+				"badmezz": {b300Mezz, "5: LinkUp"},
 				"mlx5_0":  {cx7Board, "5: LinkUp"},
 			},
 			wantStatus: consts.StatusAbnormal,

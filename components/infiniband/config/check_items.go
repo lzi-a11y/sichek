@@ -43,12 +43,16 @@ const (
 	CheckIBMezzName    = "check_ib_mezz_name"
 )
 
-// MezzBoardID is the firmware PSID (board_id) that uniquely identifies an internal
-// IB mezzanine card. Per rdma-env-pre docs/mezz-card-identification.md this is the
-// only reliable discriminator: mezz and CX7 both report PCI device 0x1021, so only
-// board_id tells them apart. A mezz card has no HCA spec by design (it is
-// identified but never configured).
-const MezzBoardID = "NVD0000000079"
+// MezzBoardIDs is the set of firmware PSIDs (board_ids) that identify an internal
+// IB mezzanine card. Per rdma-env-pre docs/mezz-card-identification.md board_id is
+// the only reliable discriminator: mezz and CX7 both report PCI device 0x1021, so
+// only board_id tells them apart. The board_id is generation-specific, so this set
+// must be extended as new GPU generations ship. A mezz card has no HCA spec by
+// design (it is identified but never configured).
+var MezzBoardIDs = map[string]bool{
+	"NVD0000000079": true, // B300
+	"MT_0000001121": true, // B200
+}
 
 var InfinibandCheckItems = map[string]common.CheckerResult{
 	CheckIBOFED: {

@@ -185,7 +185,12 @@ var InfinibandCheckItems = map[string]common.CheckerResult{
 	},
 	CheckIBMezzName: {
 		Name:        CheckIBMezzName,
-		Description: "Check that each mezz card (board_id NVD0000000079) RDMA device is named mezz_<k>",
+		// Do not name individual board_ids here: MezzBoardIDs is expected to grow
+		// with each GPU generation, and a hardcoded PSID silently goes stale — it
+		// already read NVD0000000079 (B300) while the checker was matching a B200
+		// card's MT_0000001121, and this string reaches operators via snapshot.json
+		// and the node annotation.
+		Description: "Check that each mezz card (board_id in MezzBoardIDs) RDMA device is named mezz_<k>",
 		Level:       consts.LevelCritical,
 		Detail:      "All mezz cards are named per the mezz_<k> convention",
 		ErrorName:   "IBMezzNameMismatch",
